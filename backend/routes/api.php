@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\FriendshipController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\SettlementController;
 
 use Illuminate\Support\Facades\Route;
 
@@ -50,4 +51,13 @@ Route::middleware('auth:sanctum')->prefix('transactions')->group(function () {
     Route::post('/{transaction}/respond', [TransactionController::class, 'respond']);
     Route::patch('/{transaction}',        [TransactionController::class, 'update']);
     Route::delete('/{transaction}',       [TransactionController::class, 'destroy']);
+});
+
+
+Route::middleware('auth:sanctum')->prefix('settlements')->group(function () {
+    Route::get('/suggest',               [SettlementController::class, 'suggest']);
+    Route::get('/with/{friend}',         [SettlementController::class, 'index']);
+    Route::post('/',                     [SettlementController::class, 'store']);
+    Route::post('/{settlement}/respond', [SettlementController::class, 'respond']);
+    Route::delete('/{settlement}',       [SettlementController::class, 'cancel']);
 });
