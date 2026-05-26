@@ -7,6 +7,8 @@ use App\Models\Friendship;
 use App\Models\User;
 use Illuminate\Http\Request;
 
+use App\Notifications\FriendRequestNotification;
+
 class FriendshipController extends Controller
 {
     // ── Send a friend request ───────────────────────────────────────
@@ -46,6 +48,9 @@ class FriendshipController extends Controller
             'receiver_id'  => $receiver->id,
             'status'       => 'pending',
         ]);
+
+        $friendship->load('requester');
+        $receiver->notify(new FriendRequestNotification($friendship));
 
         // Load the receiver relationship so we can return their details
         $friendship->load('receiver:id,name,email');

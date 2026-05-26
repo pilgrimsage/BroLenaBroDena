@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+use App\Models\GuestContact;
+
 class Transaction extends Model
 {
     protected $fillable = [
@@ -43,12 +45,53 @@ class Transaction extends Model
     }
 
     // Usage: Transaction::between(1, 2)->get()
-    public function scopeBetween(Builder $query, int $a, int $b): Builder
+    public function scopeBetween(Builder $query, int $userId, ?int $friendId = null, ?int $guestId = null): Builder
     {
-        return $query->where(function ($q) use ($a, $b) {
-            $q->where('payer_id', $a)->where('payee_id', $b);
-        })->orWhere(function ($q) use ($a, $b) {
-            $q->where('payer_id', $b)->where('payee_id', $a);
-        });
+        if ($friendId) {
+            // Both are registered users
+            return $query->where(function ($q) use ($userId, $friendId) {
+                $q->where('payer_id', $userId)->where('payee_id', $friendId);
+            })->orWhere(function ($q) use ($userId, $friendId) {
+                $q->where('payer_id', $friendId)->where('payee_id', $userId);
+            });
+        }
+
+        if ($guestId) {
+            // One party is a guest
+            return $query->where(function ($q) use ($userId, $guestId) {
+                $q->where('payer_id', $userId)->where('payee_guest_id', $guestId);
+            })->orWhere(function ($q) use ($userId, $guestId) {
+                $q->where('payer_guest_id', $guestId)->where('payee_id', $userId);
+            });
+        }
+
+        return $query;
+    }
+
+    // Guest relationships
+    public function payerGuest(): BelongsTo
+    {
+        return $this->belongsTo(GuestContact::class, 'payer_guest_id');
+    }
+
+    public function payeeGuest(): BelongsTo
+    {
+        return $this->belongsTo(GuestContact::class, 'payee_guest_id');
+    }
+
+    // Helper — who actually paid (user or guest)
+    public function getPayerNameAttribute(): string
+    {
+        if ($this->payer_id) return $this->payer->name ?? 'Unknown';
+        if ($this->payer_guest_id) return $this->payerGuest->name ?? 'Guest';
+        return 'Unknown';
+    }
+
+    // Helper — who owes (user or guest)
+    public function getPayeeNameAttribute(): string
+    {
+        if ($this->payee_id) return $this->payee->name ?? 'Unknown';
+        if ($this->payee_guest_id) return $this->payeeGuest->name ?? 'Guest';
+        return 'Unknown';
     }
 }
