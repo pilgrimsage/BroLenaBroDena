@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\GuestContact;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +31,46 @@ class AuthController extends Controller
             'phone'    => $request->phone,
             'password' => $request->password,
         ]);
+
+        // Find any guest contacts matching this email or phone
+        // Mark them as resolved — pointing to the new user
+        GuestContact::where(function ($q) use ($user) {
+            $q->where('email', $user->email);
+        })->orWhere(function ($q) use ($user) {
+            $q->when($user->phone, function ($q) use ($user) {
+                $q->where('phone', $user->phone);
+            });
+        })->whereNull('resolved_user_id')
+        ->update(['resolved_user_id' => $user->id]);
+
+        // Now convert their guest transactions to real bilateral transactions
+        // So both parties can see and manage them
+        $resolvedGuests = GuestContact::where('resolved_user_id', $user->id)->get();
+
+        foreach ($resolvedGuests as $guest) {
+            // Find all transactions involving this guest
+            $guestTransactions = Transaction::where('payer_guest_id', $guest->id)
+                ->orWhere('payee_guest_id', $guest->id)
+                ->get();
+
+            foreach ($guestTransactions as $tx) {
+                // Replace guest IDs with real user IDs
+                $tx->payer_id       = $tx->payer_guest_id ? $user->id : $tx->payer_id;
+                $tx->payee_id       = $tx->payee_guest_id ? $user->id : $tx->payee_id;
+                $tx->payer_guest_id = null;
+                $tx->payee_guest_id = null;
+
+                // Reset to pending — new user must confirm
+                // They shouldn't inherit auto-confirmed guest transactions blindly
+                $tx->status = 'pending';
+                $tx->save();
+            }
+
+            // Notify the creator that their guest joined
+            $guest->creator->notify(
+                new \App\Notifications\GuestJoinedNotification($guest, $user)
+            );
+        }
 
         // Step 3: Create token
         // 'auth_token' is just a label — stored in personal_access_tokens.name

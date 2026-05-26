@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\FriendshipController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\SettlementController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\GuestContactController;
 
 use Illuminate\Support\Facades\Route;
 
@@ -60,4 +62,23 @@ Route::middleware('auth:sanctum')->prefix('settlements')->group(function () {
     Route::post('/',                     [SettlementController::class, 'store']);
     Route::post('/{settlement}/respond', [SettlementController::class, 'respond']);
     Route::delete('/{settlement}',       [SettlementController::class, 'cancel']);
+});
+
+
+
+Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+    Route::get('/',                  [NotificationController::class, 'index']);
+    Route::get('/unread',            [NotificationController::class, 'unread']);
+    Route::post('/mark-all-read',    [NotificationController::class, 'markAllRead']);
+    Route::post('/fcm-token',        [NotificationController::class, 'updateFcmToken']);
+    Route::post('/{id}/read',        [NotificationController::class, 'markRead']);
+    Route::delete('/{id}',           [NotificationController::class, 'destroy']);
+});
+
+
+
+Route::middleware('auth:sanctum')->prefix('guests')->group(function () {
+    Route::get('/',         [GuestContactController::class, 'index']);
+    Route::post('/',        [GuestContactController::class, 'store']);
+    Route::delete('/{guest}', [GuestContactController::class, 'destroy']);
 });

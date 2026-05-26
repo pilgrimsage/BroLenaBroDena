@@ -9,6 +9,8 @@ use App\Models\Settlement;
 use App\Models\User;
 use Illuminate\Http\Request;
 
+use App\Notifications\SettlementNotification;
+
 class SettlementController extends Controller
 {
     // ── Initiate a settlement ────────────────────────────────────────
@@ -62,7 +64,11 @@ class SettlementController extends Controller
             'status'       => 'pending',
         ]);
 
+        
+
         $settlement->load('fromUser', 'toUser');
+
+        $friend->notify(new SettlementNotification($settlement, 'initiated'));
 
         return response()->json(
             new SettlementResource($settlement),
@@ -106,6 +112,12 @@ class SettlementController extends Controller
         // Observer fired above — balance already updated
 
         $settlement->load('fromUser', 'toUser');
+        $settlement->fromUser->notify(
+            new SettlementNotification(
+                $settlement,
+                $request->action === 'confirm' ? 'confirmed' : 'cancelled'
+            )
+        );
 
         // Return new balance so frontend can update immediately
         $newBalance = LedgerBalance::between($me->id, $settlement->from_user_id);
