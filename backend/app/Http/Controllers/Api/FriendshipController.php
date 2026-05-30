@@ -5,33 +5,48 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Friendship;
 use App\Models\User;
-use Illuminate\Http\Request;
-
 use App\Notifications\FriendRequestNotification;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class FriendshipController extends Controller
 {
-    // ── Send a friend request ───────────────────────────────────────
+    // ── Send a friend request by phone number ─────────────────────────
 
-    public function send(Request $request)
+    public function send(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email|exists:users,email',
-            // exists:users,email means the email must be in the users table
-            // returns 422 automatically if user doesn't exist
+            // Accept phone (primary) or email (fallback for older accounts)
+            'phone' => 'required_without:email|nullable|string',
+            'email' => 'required_without:phone|nullable|email',
         ]);
 
-        $me       = $request->user();
-        $receiver = User::where('email', $request->email)->first();
+        $me = $request->user();
 
-        // Can't add yourself
+        // Find receiver — phone first, then email
+        $receiver = null;
+
+        if ($request->phone) {
+            $normalized = $this->normalizePhone($request->phone);
+            $receiver   = User::where('phone', $normalized)->first();
+        }
+
+        if (! $receiver && $request->email) {
+            $receiver = User::where('email', $request->email)->first();
+        }
+
+        if (! $receiver) {
+            return response()->json([
+                'message' => 'No user found with that phone number or email.',
+            ], 404);
+        }
+
         if ($receiver->id === $me->id) {
             return response()->json([
-                'message' => 'You cannot send a friend request to yourself.'
+                'message' => 'You cannot send a friend request to yourself.',
             ], 422);
         }
 
-        // Check if a friendship already exists in any state
         $existing = $me->friendshipWith($receiver->id);
 
         if ($existing) {
@@ -39,10 +54,8 @@ class FriendshipController extends Controller
                 'message' => 'A friendship already exists.',
                 'status'  => $existing->status,
             ], 409);
-            // 409 = Conflict — resource already exists in some state
         }
 
-        // Create the friendship in pending state
         $friendship = Friendship::create([
             'requester_id' => $me->id,
             'receiver_id'  => $receiver->id,
@@ -51,37 +64,30 @@ class FriendshipController extends Controller
 
         $friendship->load('requester');
         $receiver->notify(new FriendRequestNotification($friendship));
-
-        // Load the receiver relationship so we can return their details
-        $friendship->load('receiver:id,name,email');
+        $friendship->load('receiver:id,name,phone');
 
         return response()->json($friendship, 201);
     }
 
-    // ── Accept or decline a received request ────────────────────────
+    // ── Accept or decline a received request ──────────────────────────
 
-    public function respond(Request $request, Friendship $friendship)
+    public function respond(Request $request, Friendship $friendship): JsonResponse
     {
-        // Route model binding — Laravel automatically finds
-        // Friendship::find($id) from the URL. More on this below.
-
         $request->validate([
             'action' => 'required|in:accept,decline',
         ]);
 
         $me = $request->user();
 
-        // Only the RECEIVER can accept or decline
         if ($friendship->receiver_id !== $me->id) {
             return response()->json([
-                'message' => 'Only the receiver can respond to this request.'
+                'message' => 'Only the receiver can respond to this request.',
             ], 403);
         }
 
-        // Can only respond to pending requests
         if ($friendship->status !== 'pending') {
             return response()->json([
-                'message' => 'This request has already been handled.'
+                'message' => 'This request has already been handled.',
             ], 409);
         }
 
@@ -90,45 +96,38 @@ class FriendshipController extends Controller
 
             return response()->json([
                 'message'    => 'Friend request accepted.',
-                'friendship' => $friendship->load('requester:id,name,email'),
+                'friendship' => $friendship->load('requester:id,name,phone'),
             ]);
         }
 
-        // Decline — just delete the record
         $friendship->delete();
 
-        return response()->json([
-            'message' => 'Friend request declined.'
-        ]);
+        return response()->json(['message' => 'Friend request declined.']);
     }
 
-    // ── List all accepted friends ────────────────────────────────────
+    // ── List all accepted friends ─────────────────────────────────────
 
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
-        $friends = $request->user()->friends();
-
-        return response()->json($friends);
+        return response()->json($request->user()->friends());
     }
 
-    // ── List pending requests I received ────────────────────────────
+    // ── Pending requests I received ───────────────────────────────────
 
-    public function pending(Request $request)
+    public function pending(Request $request): JsonResponse
     {
         $pending = $request->user()
             ->receivedRequests()
             ->where('status', 'pending')
-            ->with('requester:id,name,email')
-            // with() = eager loading — loads the requester in same query
-            // without this, Laravel runs a separate query per row (N+1 problem)
+            ->with('requester:id,name,phone')
             ->get();
 
         return response()->json($pending);
     }
 
-    // ── Remove a friend ─────────────────────────────────────────────
+    // ── Remove a friend ───────────────────────────────────────────────
 
-    public function remove(Request $request, User $user)
+    public function remove(Request $request, User $user): JsonResponse
     {
         $friendship = $request->user()->friendshipWith($user->id);
 
@@ -139,5 +138,22 @@ class FriendshipController extends Controller
         $friendship->delete();
 
         return response()->json(['message' => 'Friend removed.']);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────
+
+    private function normalizePhone(string $phone): string
+    {
+        $phone = preg_replace('/[\s\-\(\)]/', '', $phone);
+
+        if (strlen($phone) === 10 && ! str_starts_with($phone, '+')) {
+            $phone = '+91' . $phone;
+        }
+
+        if (! str_starts_with($phone, '+')) {
+            $phone = '+' . $phone;
+        }
+
+        return $phone;
     }
 }

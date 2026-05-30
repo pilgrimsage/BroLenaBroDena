@@ -9,15 +9,20 @@ class TransactionObserver
 {
     public function updated(Transaction $transaction): void
     {
-        // wasChanged() tells us if a specific column changed in this update
         if (! $transaction->wasChanged('status')) {
-            return; // status didn't change — nothing to do
+            return;
         }
 
-        $old = $transaction->getOriginal('status'); // what it was before
-        $new = $transaction->status;                // what it is now
+        // Guard — guest transactions have null user IDs.
+        // Balance adjustment only makes sense between two real users.
+        if (is_null($transaction->payer_id) || is_null($transaction->payee_id)) {
+            return;
+        }
 
-        // Transaction just got confirmed → add to balance
+        $old = $transaction->getOriginal('status');
+        $new = $transaction->status;
+
+        // Transaction confirmed → increase balance (payer is owed more)
         if ($new === 'confirmed') {
             LedgerBalance::adjust(
                 $transaction->payer_id,
@@ -26,12 +31,12 @@ class TransactionObserver
             );
         }
 
-        // Transaction moved AWAY from confirmed (disputed) → reverse
+        // Transaction moved away from confirmed → reverse the adjustment
         if ($old === 'confirmed' && $new !== 'confirmed') {
             LedgerBalance::adjust(
                 $transaction->payer_id,
                 $transaction->payee_id,
-                -(float) $transaction->amount // negative = reverse
+                -(float) $transaction->amount
             );
         }
     }
