@@ -11,13 +11,15 @@ use App\Models\GuestContact;
 class Transaction extends Model
 {
     protected $fillable = [
-        'creator_id', 'payer_id', 'payee_id',
-        'amount', 'note', 'status',
-    ];
+    'creator_id', 'payer_id', 'payee_id',
+    'payer_guest_id', 'payee_guest_id',
+    'amount', 'note', 'transaction_date', 'status',  // ← add here
+];
 
-    protected $casts = [
-        'amount' => 'decimal:2',
-    ];
+protected $casts = [
+    'amount'           => 'decimal:2',
+    'transaction_date' => 'date:Y-m-d',              // ← add here
+];
 
     // ── Relationships ────────────────────────────────────────────────
 

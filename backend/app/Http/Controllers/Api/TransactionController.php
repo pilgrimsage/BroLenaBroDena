@@ -31,6 +31,7 @@ class TransactionController extends Controller
             'amount' => 'required|numeric|min:0.01|max:9999999',
             'note'   => 'nullable|string|max:500',
             'type'   => 'required|in:i_paid,they_paid',
+            'transaction_date' => 'nullable|date|before_or_equal:today',
         ]);
 
         $me = $request->user();
@@ -120,6 +121,7 @@ class TransactionController extends Controller
             'amount'         => $request->amount,
             'note'           => $request->note,
             'status'         => $status,
+            'transaction_date' => $request->transaction_date ?? now()->toDateString(),
         ]);
 
         // If auto-confirmed (guest) — Observer fires immediately
@@ -309,4 +311,44 @@ class TransactionController extends Controller
         if ($balance < 0) return "You owe {$friendName} ₹" . abs($balance);
         return "All settled with {$friendName}";
     }
+
+    // Transactions with a specific guest contact
+public function withGuest(Request $request, GuestContact $guest): JsonResponse
+{
+    $me = $request->user();
+
+    // Must be the creator of this guest contact
+    if ($guest->creator_id !== $me->id) {
+        return response()->json(['message' => 'Forbidden.'], 403);
+    }
+
+    $transactions = Transaction::where(function ($q) use ($guest) {
+        $q->where('payer_guest_id', $guest->id)
+          ->orWhere('payee_guest_id', $guest->id);
+    })
+    ->with('creator:id,name')
+    ->latest()
+    ->get()
+    ->map(function ($tx) use ($me) {
+        $tx->direction = $tx->payer_id === $me->id || $tx->payer_guest_id === null
+            ? 'i_paid'
+            : 'they_paid';
+        return $tx;
+    });
+
+    // Balance for guest — sum of transactions
+    $theyOweMe = $transactions
+        ->where('direction', 'i_paid')
+        ->sum('amount');
+
+    $iOweThem = $transactions
+        ->where('direction', 'they_paid')
+        ->sum('amount');
+
+    return response()->json([
+        'guest'        => $guest,
+        'balance'      => round($theyOweMe - $iOweThem, 2),
+        'transactions' => $transactions,
+    ]);
+}
 }

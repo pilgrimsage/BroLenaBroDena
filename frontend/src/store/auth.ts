@@ -4,42 +4,27 @@ import api from '@/api/axios'
 
 // Define the shape of our auth store with TypeScript
 interface User {
-  id: number
-  name: string
-  email: string
-  phone?: string
+  id:     number
+  name:   string
+  phone:  string
+  email?: string
 }
 
 interface AuthStore {
-  user: User | null
-  token: string | null
+  user:       User | null
+  token:      string | null
   isLoggedIn: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (data: Record<string, string>) => Promise<void>
-  fetchMe: () => Promise<void>
-  logout: () => Promise<void>
-  setUser: (user: User) => void
+  fetchMe:    () => Promise<void>
+  logout:     () => Promise<void>
+  setUser:    (user: User) => void
 }
 
 export const useAuthStore = create<AuthStore>()(
-  // persist = automatically save to localStorage
   persist(
     (set) => ({
-      user: null,
-      token: null,
+      user:       null,
+      token:      null,
       isLoggedIn: false,
-
-      login: async (email, password) => {
-        const { data } = await api.post('/auth/login', { email, password })
-        localStorage.setItem('auth_token', data.token)
-        set({ user: data.user, token: data.token, isLoggedIn: true })
-      },
-
-      register: async (formData) => {
-        const { data } = await api.post('/auth/register', formData)
-        localStorage.setItem('auth_token', data.token)
-        set({ user: data.user, token: data.token, isLoggedIn: true })
-      },
 
       fetchMe: async () => {
         const { data } = await api.get('/auth/me')
@@ -55,12 +40,8 @@ export const useAuthStore = create<AuthStore>()(
       setUser: (user) => set({ user }),
     }),
     {
-      name: 'auth-storage', // localStorage key
-      partialize: (state) => ({
-        // Only persist token — re-fetch user on load
-        token: state.token,
-        isLoggedIn: state.isLoggedIn,
-      }),
+      name: 'auth-storage',
+      partialize: s => ({ token: s.token, isLoggedIn: s.isLoggedIn }),
     }
   )
 )

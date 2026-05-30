@@ -15,10 +15,11 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 Route::prefix('auth')->group(function () {
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login',    [AuthController::class, 'login']);
+     // Public
+    Route::post('send-otp',    [AuthController::class, 'sendOtp']);
+    Route::post('verify-otp',  [AuthController::class, 'verifyOtp']);
 });
-
+Route::get('/transactions/with-guest/{guest}', [TransactionController::class, 'withGuest']);
 /*
 |--------------------------------------------------------------------------
 | Protected routes — valid token required in Authorization header

@@ -1,9 +1,42 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
+/* Dark mode — activates when .dark class on any ancestor */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Theme tokens — replaces tailwind.config.js */
+@theme {
+  --color-brand:        #7C6EFA;
+  --color-brand-dark:   #6355E8;
+  --font-family-sans:   'Inter', sans-serif;
+
+  /* Gray scale */
+  --color-gray-950:     #0a0a0f;
+
+  /* Custom surface colors */
+  --color-surface:      #ffffff;
+  --color-surface-dark: #1C1C28;
+  --color-card:         #ffffff;
+  --color-card-dark:    #22223A;
+}
+
+/* Custom utilities — replaces @layer utilities */
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Slide up animation for bottom sheets */
 @keyframes slideUp {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
+}
+
+@layer base {
+  body {
+    @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans;
+  }
 }

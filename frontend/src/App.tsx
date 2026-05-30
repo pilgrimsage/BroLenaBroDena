@@ -8,6 +8,11 @@ import DashboardPage from '@/pages/DashboardPage'
 import LedgerPage   from '@/pages/LedgerPage'
 import FriendsPage  from '@/pages/FriendsPage'
 import ProfilePage  from '@/pages/ProfilePage'
+import { registerPush, setupNetworkListener, setupNativeUI } from '@/lib/capacitor'
+import OfflineBanner from '@/components/OfflineBanner'
+import { useThemeStore } from '@/store/theme'
+import GuestContactsPage from '@/pages/GuestContactsPage'
+import GuestLedgerPage   from '@/pages/GuestLedgerPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isLoggedIn = useAuthStore(s => s.isLoggedIn)
@@ -27,13 +32,28 @@ export default function App() {
   // Show BottomNav: logged in, not auth page
   const showBottomNav = isLoggedIn && !isAuth
 
+  const { isDark } = useThemeStore()
+
   useEffect(() => {
-    if (isLoggedIn) fetchMe()
+    // Apply saved theme immediately on load
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    
+    if (isLoggedIn) {
+      fetchMe()
+      registerPush()           // register for push notifications
+    }
+    setupNativeUI()            // status bar + splash — runs regardless of login
+    setupNetworkListener()     // network change listener
   }, [])
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto relative">
-
+       <OfflineBanner />
+       
       {showTopBar && <TopBar />}
 
       <main className={`
@@ -58,6 +78,13 @@ export default function App() {
           <Route path="/profile" element={
             <RequireAuth><ProfilePage /></RequireAuth>
           } />
+
+          <Route path="/guests" element={
+  <RequireAuth><GuestContactsPage /></RequireAuth>
+} />
+<Route path="/guest-ledger/:guestId" element={
+  <RequireAuth><GuestLedgerPage /></RequireAuth>
+} />
 
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

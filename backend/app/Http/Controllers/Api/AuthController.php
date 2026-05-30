@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Otp;
 use App\Models\User;
+use App\Services\SmsService;
 use App\Models\GuestContact;
 
 use Illuminate\Http\Request;
@@ -12,6 +14,150 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+
+    public function __construct(private SmsService $sms) {}
+
+    // ── Step 1: Send OTP ─────────────────────────────────────────────
+
+    public function sendOtp(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone' => 'required|string|min:10|max:15',
+            // min:10 max:15 covers international formats
+        ]);
+
+        $phone = $this->normalizePhone($request->phone);
+
+        // Delete previous unused OTPs for this phone
+        Otp::where('phone', $phone)
+           ->whereNull('used_at')
+           ->delete();
+
+        // Generate 6-digit OTP
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        // random_int is cryptographically secure — better than rand()
+
+        // Store OTP — expires in 10 minutes
+        Otp::create([
+            'phone'      => $phone,
+            'code'       => $code,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        // Send SMS
+        $sent = $this->sms->send($phone, "Your BrolenaBrodena OTP is: {$code}. Valid for 10 minutes.");
+
+        if (!$sent && !app()->environment('local')) {
+            return response()->json([
+                'message' => 'Failed to send OTP. Try again.'
+            ], 500);
+        }
+
+        $response = ['message' => 'OTP sent successfully.'];
+
+        // In development — return OTP in response for easy testing
+        // REMOVE THIS IN PRODUCTION
+        
+            $response['otp'] = $code;
+            $response['note'] = 'OTP visible in dev mode only';
+        
+
+        return response()->json($response);
+    }
+
+    // ── Step 2: Verify OTP ───────────────────────────────────────────
+
+    public function verifyOtp(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone' => 'required|string',
+            'code'  => 'required|string|size:6',
+            'name'  => 'nullable|string|max:255',
+            // name only needed for new users
+        ]);
+
+        $phone = $this->normalizePhone($request->phone);
+
+        // Find valid OTP
+        $otp = Otp::where('phone', $phone)
+                  ->where('code', $request->code)
+                  ->whereNull('used_at')
+                  ->latest()
+                  ->first();
+
+        if (!$otp) {
+            return response()->json([
+                'message' => 'Invalid OTP.'
+            ], 422);
+        }
+
+        if ($otp->isExpired()) {
+            return response()->json([
+                'message' => 'OTP has expired. Request a new one.'
+            ], 422);
+        }
+
+        // Mark OTP as used
+        $otp->update(['used_at' => now()]);
+
+        // Find or create user
+        $isNewUser = false;
+        $user = User::where('phone', $phone)->first();
+
+        if (!$user) {
+            // New user — name required
+            if (!$request->name) {
+                return response()->json([
+                    'message'  => 'Please provide your name.',
+                    'requires' => 'name',
+                    // Frontend shows name input on this response
+                ], 422);
+            }
+
+            $user = User::create([
+                'name'  => $request->name,
+                'phone' => $phone,
+            ]);
+
+            // Auto-resolve any guest contacts with this phone
+            \App\Models\GuestContact::where('phone', $phone)
+                ->whereNull('resolved_user_id')
+                ->update(['resolved_user_id' => $user->id]);
+
+            $isNewUser = true;
+        }
+
+        // Revoke old tokens
+        $user->tokens()->delete();
+
+        // Issue new token
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'user'        => $user,
+            'token'       => $token,
+            'is_new_user' => $isNewUser,
+        ]);
+    }
+
+    private function normalizePhone(string $phone): string
+    {
+        // Remove spaces, dashes, parentheses
+        $phone = preg_replace('/[\s\-\(\)]/', '', $phone);
+
+        // Add +91 for Indian numbers if no country code
+        if (strlen($phone) === 10 && !str_starts_with($phone, '+')) {
+            $phone = '+91' . $phone;
+        }
+
+        // Ensure + prefix
+        if (!str_starts_with($phone, '+')) {
+            $phone = '+' . $phone;
+        }
+
+        return $phone;
+    }
+    
     public function register(Request $request)
     {
         // Step 1: Validate

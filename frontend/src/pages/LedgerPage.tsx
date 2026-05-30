@@ -73,22 +73,23 @@ export default function LedgerPage() {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 min-h-screen bg-gray-50 dark:bg-gray-950">
 
       {/* ── Sticky header ──────────────────────────────────────── */}
-      <div className="sticky top-14 z-10 bg-white border-b border-gray-100 px-5 py-3">
+      <div className="sticky top-14 z-10 bg-white border-b border-gray-100 px-5 py-3 bg-white dark:bg-gray-900
+                border-gray-100 dark:border-white/5">
         <div className="flex items-center gap-3">
 
           <button
             onClick={() => navigate(-1)}
             // navigate(-1) = browser back — same as pressing back button
-            className="p-1.5 rounded-full hover:bg-gray-100 transition flex-shrink-0"
+            className="p-1.5 rounded-full hover:bg-gray-100 transition flex-shrink-0 hover:bg-gray-100 dark:hover:bg-white/10"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
+            <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
 
           <div className="flex-1">
-            <p className="font-bold text-gray-900">{friendName}</p>
+            <p className="font-bold text-gray-900 dark:text-white">{friendName}</p>
             {isLoading ? (
               <Skeleton className="h-3 w-24 mt-1" />
             ) : (
@@ -210,7 +211,8 @@ function TransactionCard({ tx, myId, onConfirm, onDispute, isResponding }: TxCar
     && (tx.payer_id === myId || tx.payee_id === myId)
 
   return (
-    <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+    <div className="bg-white dark:bg-gray-900 border-gray-100
+               dark:border-white/5 bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
       <div className="flex items-start gap-3">
 
         {/* Direction indicator dot */}
@@ -229,15 +231,15 @@ function TransactionCard({ tx, myId, onConfirm, onDispute, isResponding }: TxCar
         <div className="flex-1 min-w-0">
 
           {/* Note or default label */}
-          <p className="font-semibold text-sm text-gray-900">
+          <p className="font-semibold text-sm text-gray-900 dark:text-white">
             {tx.note || (iPaid ? 'You paid' : 'They paid')}
           </p>
 
           {/* Meta — who paid + when */}
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-400 dark:text-gray-500">
             {createdByMe ? 'Added by you' : `Added by ${tx.creator?.name}`}
             {' · '}
-            {dayjs(tx.created_at).fromNow()}
+            {dayjs(tx.transaction_date || tx.created_at).fromNow()}
           </p>
 
           {/* Status badge */}
