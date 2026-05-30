@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { Home, Users, Ghost, User } from 'lucide-react'
 
-// Define tabs in an array — makes adding new tabs easy
 const tabs = [
   { to: '/',        icon: Home,  label: 'Home'    },
   { to: '/friends', icon: Users, label: 'Friends' },
@@ -11,20 +10,18 @@ const tabs = [
 
 export default function BottomNav() {
   return (
-    <nav className="fixed bottom-0 inset-x-0 max-w-md mx-auto z-40
-                    bg-white border-t border-gray-100 safe-area-pb safe-bottom bg-white/90 dark:bg-gray-900/90
-                border-gray-100 dark:border-white/5">
+    <nav className="fixed bottom-0 inset-x-0 max-w-md mx-auto z-40 safe-bottom
+                    bg-white/90 dark:bg-gray-900/90 backdrop-blur-md
+                    border-t border-gray-100 dark:border-white/5">
       <div className="flex">
         {tabs.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end
-            // end means EXACT match for '/'
-            // Without it, '/' matches everything (/ /friends /profile)
             className={({ isActive }) =>
-              // NavLink passes isActive — true when URL matches
-              `flex-1 flex flex-col items-center gap-1 py-3 transition-colors text-xs font-medium
+              `flex-1 flex flex-col items-center gap-1 py-3
+               transition-colors text-xs font-medium
                ${isActive
                  ? 'text-brand'
                  : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
