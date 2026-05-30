@@ -1,236 +1,362 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Phone, ArrowRight, RotateCcw, Loader2, User } from 'lucide-react'
+import api from '@/api/axios'
 import { useAuthStore } from '@/store/auth'
 
+// Three steps in the auth flow
+type Step = 'phone' | 'otp' | 'name'
+
 export default function AuthPage() {
-  const navigate  = useNavigate()
-  // useNavigate gives us a function to change the URL
-  // navigate('/') goes to dashboard
+  const navigate = useNavigate()
+  const { fetchMe } = useAuthStore()
 
-  const { login, register } = useAuthStore()
-  // Pull just what we need from the auth store
+  const [step,    setStep]    = useState<Step>('phone')
+  const [phone,   setPhone]   = useState('')
+  const [otp,     setOtp]     = useState('')
+  const [name,    setName]    = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+  const [resendIn,setResendIn]= useState(0)
 
-  // Which tab is active
-  const [tab, setTab] = useState<'login' | 'register'>('login')
+  // Dev only — server returns OTP for easy testing
+  const [devOtp,  setDevOtp]  = useState('')
 
-  // Form fields — one state per field
-  const [name,     setName]     = useState('')
-  const [email,    setEmail]    = useState('')
-  const [phone,    setPhone]    = useState('')
-  const [password, setPassword] = useState('')
 
-  // UI state
-  const [loading,      setLoading]      = useState(false)
-  const [error,        setError]        = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-
-  function switchTab(newTab: 'login' | 'register') {
-    setTab(newTab)
-    setError('')   // clear error when switching tabs
-    // Don't clear form fields — user might switch by accident
+  useEffect(() => {
+  if (otp.length === 6 && step === 'otp') {
+    // Small delay so user sees the filled digits before submit
+    const timer = setTimeout(() => {
+      handleVerifyOtp({ preventDefault: () => {} } as any)
+    }, 600)
+    return () => clearTimeout(timer)
   }
+}, [otp, step])
 
-
-  async function handleSubmit(e: React.FormEvent) {
+  // ── Step 1: Send OTP ───────────────────────────────────────────────
+  async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault()
-    // e.preventDefault() stops the browser's default form submit
-    // (which would reload the page) — same concept as PHP forms
+    setError('')
 
-    setError('')      // clear previous errors
-    setLoading(true)  // show spinner
+    if (!phone.trim()) {
+      setError('Enter your phone number.')
+      return
+    }
 
+    setLoading(true)
     try {
-      if (tab === 'login') {
-        await login(email, password)
-        // login() is in our Zustand store
-        // it calls the API and updates global state
-      } else {
-        await register({ name, email, phone, password })
+      const { data } = await api.post('/auth/send-otp', { phone })
+      setStep('otp')
+      startResendTimer()
+
+      // Dev mode — show OTP
+      if (data.otp) {
+        setDevOtp(data.otp); 
+        setOtp(data.otp);
       }
 
-      // If we get here — success. Navigate to dashboard.
-      // Small delay allows state to settle (optional but safe)
-    await new Promise(resolve => setTimeout(resolve, 50))
-    navigate('/')
-
     } catch (err: any) {
-      // API returned an error — extract the message
-      // Laravel validation errors look like:
-      // { message: "...", errors: { email: ["..."], password: ["..."] } }
-
-      const laravelMessage = err?.response?.data?.message
-      const firstError = Object.values(
-        err?.response?.data?.errors ?? {}
-      )?.[0]?.[0]
-      // Object.values gets all error arrays
-      // [0][0] gets first array, first message
-
-      setError(laravelMessage ?? firstError ?? 'Something went wrong.')
-
+      setError(err?.response?.data?.message ?? 'Failed to send OTP.')
     } finally {
-      setLoading(false) // always hide spinner, success or fail
-      // finally runs whether try succeeded or catch ran
+      setLoading(false)
     }
   }
 
+  // ── Step 2: Verify OTP ─────────────────────────────────────────────
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
 
-  // Reuse this class string on every input
-  const inputClass = `
-    w-full px-4 py-3 rounded-xl text-sm
-    bg-gray-50 border border-gray-200
-    focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand
+    if (otp.length !== 6) {
+      setError('Enter the 6-digit OTP.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const { data } = await api.post('/auth/verify-otp', {
+        phone,
+        code: otp,
+        name: name || undefined,
+      })
+
+      // Store token
+      localStorage.setItem('auth_token', data.token)
+      useAuthStore.setState({
+        user: data.user,
+        token: data.token,
+        isLoggedIn: true,
+      })
+
+      navigate('/')
+
+    } catch (err: any) {
+      const response = err?.response?.data
+
+      // New user needs to provide name
+      if (response?.requires === 'name') {
+        setStep('name')
+        setError('')
+        return
+      }
+
+      setError(response?.message ?? 'Invalid OTP.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ── Step 3: Submit name then verify again ──────────────────────────
+  async function handleSubmitName(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+
+    if (!name.trim()) {
+      setError('Enter your name.')
+      return
+    }
+
+    // Re-use verify with name included
+    await handleVerifyOtp(e)
+  }
+
+  // ── Resend timer ───────────────────────────────────────────────────
+  function startResendTimer() {
+    setResendIn(30)
+    const interval = setInterval(() => {
+      setResendIn(v => {
+        if (v <= 1) { clearInterval(interval); return 0 }
+        return v - 1
+      })
+    }, 1000)
+  }
+
+  async function handleResend() {
+    setOtp('')
+    setError('')
+    setDevOtp('')
+    await handleSendOtp({ preventDefault: () => {} } as any)
+  }
+
+  // ── Shared styles ──────────────────────────────────────────────────
+  const input = `
+    w-full px-4 py-3.5 rounded-2xl text-sm font-medium
+    bg-gray-100 dark:bg-white/5
+    border border-transparent
+    focus:border-brand focus:bg-white dark:focus:bg-white/10
+    focus:outline-none focus:ring-0
     transition-all placeholder:text-gray-400
+    dark:text-white
   `
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-6 py-12 bg-gray-50">
+    <div className="min-h-screen flex flex-col justify-center px-6 py-12
+                    bg-gray-50 dark:bg-gray-950">
 
-      {/* Logo area */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand/10 mb-4">
-          <span className="text-2xl font-bold text-brand">FL</span>
+      {/* ── Logo ─────────────────────────────────────────────────── */}
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center
+                        w-16 h-16 rounded-2xl bg-brand/10 mb-4">
+          <span className="text-2xl font-black text-brand">BB</span>
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">FriendLedger</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Track what friends owe — simply.
+        <h1 className="text-2xl font-black text-gray-900 dark:text-white">
+          BrolenaBrodena
+        </h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Track money between friends — simply.
         </p>
       </div>
 
-      {/* Tab switcher */}
-      <div className="flex bg-gray-200 rounded-xl p-1 mb-6">
-        {(['login', 'register'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => switchTab(t)}
-            className={`
-              flex-1 py-2.5 text-sm font-medium rounded-lg transition-all
-              ${tab === t
-                ? 'bg-white shadow-sm text-gray-900'
-                : 'text-gray-500 hover:text-gray-700'
-              }
-            `}
-          >
-            {t === 'login' ? 'Sign in' : 'Create account'}
-          </button>
+      {/* ── Step indicators ──────────────────────────────────────── */}
+      <div className="flex items-center justify-center gap-2 mb-8">
+        {(['phone', 'otp', 'name'] as Step[]).map((s, i) => (
+          <div key={s} className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full transition-all
+              ${step === s
+                ? 'w-6 bg-brand'
+                : i < ['phone','otp','name'].indexOf(step)
+                  ? 'bg-brand/40'
+                  : 'bg-gray-200 dark:bg-white/10'
+              }`}
+            />
+          </div>
         ))}
       </div>
-      {/* .map() on an array renders multiple elements */}
-      {/* key={t} is required — React needs to track list items */}
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-
-        {/* Name — only show on register tab */}
-        {tab === 'register' && (
+      {/* ── Step 1: Phone ────────────────────────────────────────── */}
+      {step === 'phone' && (
+        <form onSubmit={handleSendOtp} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">
-              Full name
+            <label className="block text-xs font-semibold text-gray-500
+                              dark:text-gray-400 mb-2 uppercase tracking-wide">
+              Your phone number
             </label>
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2
+                              flex items-center gap-2 pointer-events-none">
+                <Phone className="w-4 h-4 text-gray-400" />
+                <span className="text-sm text-gray-500 font-medium border-r
+                                 border-gray-200 dark:border-white/10 pr-2">
+                  +91
+                </span>
+              </div>
+              <input
+                type="tel"
+                inputMode="numeric"
+                placeholder="98765 43210"
+                value={phone}
+                onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
+                maxLength={10}
+                className={input + ' pl-24'}
+                autoFocus
+              />
+            </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 px-1">
+              We'll send a one-time password to this number
+            </p>
+          </div>
+
+          {error && <ErrorBox message={error} />}
+
+          <button type="submit" disabled={loading}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
+                       bg-brand hover:bg-brand-dark active:scale-[0.98]
+                       transition-all disabled:opacity-60
+                       flex items-center justify-center gap-2">
+            {loading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <ArrowRight className="w-4 h-4" />
+            }
+            {loading ? 'Sending OTP…' : 'Send OTP'}
+          </button>
+        </form>
+      )}
+
+      {/* ── Step 2: OTP ──────────────────────────────────────────── */}
+      {step === 'otp' && (
+        <form onSubmit={handleVerifyOtp} className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-gray-500
+                                dark:text-gray-400 uppercase tracking-wide">
+                Enter OTP
+              </label>
+              <button type="button" onClick={() => setStep('phone')}
+                className="text-xs text-brand font-medium">
+                Change number
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+              Sent to <span className="font-semibold">+91 {phone}</span>
+            </p>
+
+            {/* Dev OTP hint */}
+            {devOtp && (
+  <div className="bg-amber-50 dark:bg-amber-500/10 border
+                  border-amber-200 dark:border-amber-500/20
+                  rounded-xl px-4 py-2.5 mb-3
+                  flex items-center justify-between">
+    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+      🧪 OTP auto-filled: {devOtp}
+    </p>
+    <span className="text-[10px] text-amber-500">
+      Submitting…
+    </span>
+  </div>
+)}
+
+
+            {/* OTP input — big digits */}
             <input
               type="text"
-              placeholder="Alice"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className={inputClass}
+              inputMode="numeric"
+              placeholder="● ● ● ● ● ●"
+              value={otp}
+              onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              maxLength={6}
+              className={input + ' text-center text-2xl font-black tracking-[0.5em]'}
+              autoFocus
             />
           </div>
-        )}
-        {/* tab === 'register' && (...) */}
-        {/* If tab is 'register' → show this. Otherwise → show nothing. */}
-        {/* This is conditional rendering with && */}
 
-        {/* Email — always shown */}
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Email address
-          </label>
-          <input
-            type="email"
-            placeholder="alice@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className={inputClass}
-          />
-        </div>
+          {error && <ErrorBox message={error} />}
 
-        {/* Phone — register only */}
-        {tab === 'register' && (
+          <button type="submit" disabled={loading || otp.length !== 6}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
+                       bg-brand hover:bg-brand-dark active:scale-[0.98]
+                       transition-all disabled:opacity-60
+                       flex items-center justify-center gap-2">
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? 'Verifying…' : 'Verify OTP'}
+          </button>
+
+          {/* Resend */}
+          <div className="text-center">
+            {resendIn > 0 ? (
+              <p className="text-xs text-gray-400">
+                Resend OTP in {resendIn}s
+              </p>
+            ) : (
+              <button type="button" onClick={handleResend}
+                className="text-xs text-brand font-semibold
+                           flex items-center gap-1 mx-auto">
+                <RotateCcw className="w-3 h-3" />
+                Resend OTP
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+
+      {/* ── Step 3: Name (new users only) ────────────────────────── */}
+      {step === 'name' && (
+        <form onSubmit={handleSubmitName} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">
-              Phone <span className="text-gray-400">(optional)</span>
+            <label className="block text-xs font-semibold text-gray-500
+                              dark:text-gray-400 mb-2 uppercase tracking-wide">
+              What's your name?
             </label>
-            <input
-              type="tel"
-              placeholder="+91 98765 43210"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className={inputClass}
-            />
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Looks like you're new here! What should we call you?
+            </p>
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2
+                               w-4 h-4 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Alice"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className={input + ' pl-11'}
+                autoFocus
+              />
+            </div>
           </div>
-        )}
 
-        {/* Password with show/hide toggle */}
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Password
-          </label>
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Min. 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              className={inputClass + ' pr-11'}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              {showPassword
-                ? <EyeOff className="w-4 h-4" />
-                : <Eye    className="w-4 h-4" />
-              }
-            </button>
-          </div>
-        </div>
-        {/* setShowPassword(v => !v) */}
-        {/* v => !v is a functional update — takes current value, flips it */}
-        {/* Safer than setShowPassword(!showPassword) when updates are fast */}
+          {error && <ErrorBox message={error} />}
 
-        {/* Error message */}
-        {error && (
-          <div className="bg-red-50 border border-red-100 text-red-600 text-xs rounded-xl px-4 py-3">
-            {error}
-          </div>
-        )}
+          <button type="submit" disabled={loading || !name.trim()}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
+                       bg-brand hover:bg-brand-dark active:scale-[0.98]
+                       transition-all disabled:opacity-60
+                       flex items-center justify-center gap-2">
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? 'Creating account…' : 'Get started →'}
+          </button>
+        </form>
+      )}
 
-        {/* Submit button */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="
-            w-full py-3.5 rounded-xl font-semibold text-sm text-white
-            bg-brand hover:bg-brand/90 active:scale-[0.98]
-            transition-all disabled:opacity-60
-            flex items-center justify-center gap-2
-          "
-        >
-          {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-          {loading
-            ? 'Please wait...'
-            : tab === 'login' ? 'Sign in' : 'Create account'
-          }
-        </button>
-
-      </form>
     </div>
   )
 }
 
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <div className="bg-red-50 dark:bg-red-500/10 border border-red-100
+                    dark:border-red-500/20 text-red-600 dark:text-red-400
+                    text-xs rounded-xl px-4 py-3">
+      {message}
+    </div>
+  )
+}

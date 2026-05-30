@@ -22,7 +22,7 @@ export default function DashboardPage() {
   // ?? 0 — if data is undefined (loading), default to 0
 
   return (
-    <div className="px-5 pt-4 pb-6 space-y-5">
+    <div className="px-5 pt-4 pb-6 space-y-5 bg-gray-50 dark:bg-gray-950">
 
       {/* ── Net balance card ─────────────────────────────────────── */}
       <div className={`
@@ -71,7 +71,7 @@ export default function DashboardPage() {
       {/* ── Friends / balances list ──────────────────────────────── */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">Balances</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">Balances</h2>
           <button
             onClick={() => navigate('/friends')}
             className="text-xs text-brand font-medium"
@@ -175,7 +175,8 @@ function FriendBalanceCard({ item, onClick }: FriendBalanceCardProps) {
       className="w-full flex items-center gap-3 bg-white rounded-2xl p-4
                  border border-gray-100 shadow-sm
                  hover:shadow-md active:scale-[0.99]
-                 transition-all text-left"
+                 transition-all text-left bg-white dark:bg-gray-900
+                   border-gray-100 dark:border-white/5"
     >
       {/* Avatar circle — colour shows balance direction */}
       <div className={`
@@ -190,7 +191,7 @@ function FriendBalanceCard({ item, onClick }: FriendBalanceCardProps) {
 
       {/* Name + summary */}
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-gray-900 truncate">
+        <p className="font-semibold text-sm text-gray-900 truncate text-gray-900 dark:text-white">
           {friend.name}
         </p>
         <p className={`text-xs mt-0.5 truncate

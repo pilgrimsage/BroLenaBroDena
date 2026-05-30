@@ -5,9 +5,7 @@ interface SkeletonProps {
 
 export function Skeleton({ className = '' }: SkeletonProps) {
   return (
-    <div className={`animate-pulse bg-gray-100 rounded-xl ${className}`} />
-    // animate-pulse = Tailwind animation, subtle fade in/out
-    // className prop lets parent override/add styles
+    <div className={`animate-pulse bg-gray-100 dark:bg-white/5 rounded-xl ${className}`} />
   )
 }
 

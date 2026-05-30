@@ -88,10 +88,11 @@ export default function FriendsPage() {
   `
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
 
       {/* ── Tab bar ────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-100 px-5 pt-4 pb-0 sticky top-14 z-10">
+      <div className="bg-white dark:bg-gray-900
+               border-gray-100 dark:border-white/5 bg-white border-b border-gray-100 px-5 pt-4 pb-0 sticky top-14 z-10">
         <div className="flex gap-1">
           {([
             { key: 'friends', label: 'Friends',  count: null         },
@@ -106,7 +107,7 @@ export default function FriendsPage() {
                 border-b-2 transition-all
                 ${tab === key
                   ? 'border-brand text-brand'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
+                  : 'border-transparent text-gray-400 dark:text-gray-500'
                 }
               `}
             >
@@ -210,7 +211,9 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
           placeholder="Search friends…"
           className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-white
                      border border-gray-200 focus:outline-none
-                     focus:ring-2 focus:ring-brand/40 transition-all"
+                     focus:ring-2 focus:ring-brand/40 transition-all bg-white dark:bg-gray-900
+           border-gray-200 dark:border-white/10
+           text-gray-900 dark:text-white"
         />
       </div>
 
@@ -218,7 +221,8 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
       {filtered.map((friend: any) => (
         <div
           key={friend.id}
-          className="flex items-center gap-3 bg-white rounded-2xl p-4
+          className="bg-white dark:bg-gray-900
+               border-gray-100 dark:border-white/5 flex items-center gap-3 bg-white rounded-2xl p-4
                      border border-gray-100 shadow-sm"
         >
           {/* Avatar */}
@@ -228,11 +232,12 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
           </div>
 
           {/* Info */}
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-gray-900 truncate">
+          <div className="bg-blue-50 dark:bg-blue-500/10
+               border-blue-100 dark:border-blue-500/20">
+            <p className="text-blue-700 dark:text-blue-400 font-semibold text-sm text-gray-900 truncate text-gray-900 dark:text-white">
               {friend.name}
             </p>
-            <p className="text-xs text-gray-400 truncate">{friend.email}</p>
+            <p className="text-blue-600 dark:text-blue-300 text-xs text-gray-400 truncate">{friend.email}</p>
           </div>
 
           {/* Actions */}

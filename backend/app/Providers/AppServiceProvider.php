@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 
 use App\Models\Settlement;
 use App\Observers\SettlementObserver;
+use App\Services\SmsService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -18,5 +19,11 @@ class AppServiceProvider extends ServiceProvider
         // TransactionObserver::updated() runs automatically
 
         Settlement::observe(SettlementObserver::class);
+    }
+
+
+    public function register(): void
+    {
+        $this->app->singleton(SmsService::class);
     }
 }

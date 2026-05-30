@@ -10,6 +10,8 @@ import { useAuthStore } from '@/store/auth'
 import { useNotifications } from '@/hooks/useApi'
 import { Skeleton } from '@/components/Skeleton'
 import api from '@/api/axios'
+import { Sun, Moon } from 'lucide-react'
+import { useThemeStore } from '@/store/theme'
 
 dayjs.extend(relativeTime)
 
@@ -23,6 +25,8 @@ export default function ProfilePage() {
   const { data: notifData, isLoading: loadingNotifs, refetch } = useNotifications()
   const notifications = notifData?.notifications?.data ?? []
   const unreadCount   = notifData?.unread_count ?? 0
+
+  const { isDark, toggle } = useThemeStore()
 
   // ── Logout ────────────────────────────────────────────────────────
   async function handleLogout() {
@@ -60,10 +64,11 @@ export default function ProfilePage() {
     ?? '?'
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
 
       {/* ── Profile header ─────────────────────────────────────── */}
-      <div className="bg-white px-5 py-6 border-b border-gray-100">
+      <div className="bg-white dark:bg-gray-900
+               border-gray-100 dark:border-white/5 bg-white px-5 py-6 border-b border-gray-100">
         <div className="flex items-center gap-4">
 
           {/* Avatar */}
@@ -74,10 +79,10 @@ export default function ProfilePage() {
 
           {/* User info */}
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900 text-lg leading-tight truncate">
+            <p className="font-bold text-gray-900 dark:text-white font-bold text-gray-900 text-lg leading-tight truncate">
               {user?.name ?? '…'}
             </p>
-            <p className="text-sm text-gray-400 truncate mt-0.5">
+            <p className="text-gray-400 dark:text-gray-500 text-sm text-gray-400 truncate mt-0.5">
               {user?.email}
             </p>
             {user?.phone && (
@@ -167,10 +172,33 @@ export default function ProfilePage() {
         </div>
 
         {/* ── Account section ───────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <p className="px-4 pt-4 pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+        <div className="bg-white dark:bg-gray-900
+               border-gray-100 dark:border-white/5 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <p className="px-4 pt-4 pb-2 text-xs font-semibold text-gray-400 uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Account
           </p>
+
+          <button
+            onClick={toggle}
+            className="w-full flex items-center gap-3 px-4 py-3.5
+                      border-t border-gray-100 dark:border-white/5
+                      hover:bg-gray-50 dark:hover:bg-white/5
+                      active:bg-gray-100 transition-all text-left"
+          >
+            {isDark
+              ? <Sun  className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              : <Moon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            }
+            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+              {isDark ? 'Light mode' : 'Dark mode'}
+            </span>
+            {/* Visual indicator */}
+            <div className={`ml-auto w-10 h-6 rounded-full transition-colors
+              ${isDark ? 'bg-brand' : 'bg-gray-200'}`}>
+              <div className={`w-5 h-5 bg-white rounded-full shadow mt-0.5 transition-transform
+                ${isDark ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </div>
+          </button>
 
           {/* User info row */}
           <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-50">
@@ -233,8 +261,9 @@ function NotificationRow({ notif, onRead, onDelete }: NotifRowProps) {
     <div className={`
       flex items-start gap-3 px-4 py-3.5 border-t border-gray-50
       transition-colors
-      ${isUnread ? 'bg-blue-50/50' : 'bg-white'}
-    `}>
+      ${isUnread
+      ? 'bg-blue-50/50 dark:bg-blue-500/5'
+      : 'bg-white dark:bg-gray-900'}`}>
 
       {/* Icon */}
       <span className="text-xl flex-shrink-0 mt-0.5">{icon}</span>
@@ -242,7 +271,7 @@ function NotificationRow({ notif, onRead, onDelete }: NotifRowProps) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <p className={`text-sm leading-snug
-          ${isUnread ? 'font-semibold text-gray-900' : 'text-gray-600'}
+          ${isUnread ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400'}
         `}>
           {message}
         </p>

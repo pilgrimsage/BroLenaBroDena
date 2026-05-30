@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/api/axios'
+import { enqueue } from '@/lib/offlineQueue'
 
 // ── Balance / Dashboard ────────────────────────────────────────────
 
@@ -28,9 +29,20 @@ export function usePendingRequests() {
 
 export function useSendFriendRequest() {
   const qc = useQueryClient()
+
   return useMutation({
-    mutationFn: (email: string) =>
-      api.post('/friends/send', { email }).then(r => r.data),
+    mutationFn: async (email: string) => {
+      if (!navigator.onLine) {
+        await enqueue('send_friend_request', '/friends/send', 'POST', { email })
+        throw { isOfflineQueued: true }
+      }
+      return api.post('/friends/send', { email }).then(r => r.data)
+    },
+
+    onError: (error: any) => {
+      if (error?.isOfflineQueued) return
+    },
+
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['friends'] })
     },
@@ -73,12 +85,35 @@ export function useLedger(friendId: number) {
 
 export function useAddTransaction() {
   const qc = useQueryClient()
+
   return useMutation({
-    mutationFn: (payload: any) =>
-      api.post('/transactions', payload).then(r => r.data),
+    mutationFn: async (payload: any) => {
+      // Check if online before attempting
+      if (!navigator.onLine) {
+        // Queue it for later
+        await enqueue(
+          'add_transaction',
+          '/transactions',
+          'POST',
+          payload
+        )
+        // Return a fake success so the UI doesn't show error
+        // We'll throw a special error type to distinguish
+        throw { isOfflineQueued: true }
+      }
+
+      return api.post('/transactions', payload).then(r => r.data)
+    },
+
+    onError: (error: any) => {
+      // Offline queued — not a real error
+      if (error?.isOfflineQueued) return
+      // Real error — let it propagate
+    },
+
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['balances'] })
-      qc.invalidateQueries({ queryKey: ['ledger'] })
+      qc.invalidateQueries({ queryKey: ['ledger']   })
     },
   })
 }
