@@ -1,15 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Phone, ArrowRight, RotateCcw, Loader2, User } from 'lucide-react'
 import api from '@/api/axios'
 import { useAuthStore } from '@/store/auth'
 
-// Three steps in the auth flow
 type Step = 'phone' | 'otp' | 'name'
 
 export default function AuthPage() {
-  const navigate = useNavigate()
-  const { fetchMe } = useAuthStore()
+  const navigate          = useNavigate()
+  const { fetchMe }       = useAuthStore()
 
   const [step,    setStep]    = useState<Step>('phone')
   const [phone,   setPhone]   = useState('')
@@ -18,20 +17,26 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
   const [resendIn,setResendIn]= useState(0)
-
-  // Dev only — server returns OTP for easy testing
   const [devOtp,  setDevOtp]  = useState('')
 
+  // Track whether auto-submit already fired for the current OTP value.
+  // Without this, switching step to 'name' and back would re-trigger it.
+  const autoSubmittedOtp = useRef('')
 
+  // Auto-submit when OTP input reaches 6 digits — only on the otp step
   useEffect(() => {
-  if (otp.length === 6 && step === 'otp') {
-    // Small delay so user sees the filled digits before submit
-    const timer = setTimeout(() => {
-      handleVerifyOtp({ preventDefault: () => {} } as any)
-    }, 600)
-    return () => clearTimeout(timer)
-  }
-}, [otp, step])
+    if (
+      otp.length === 6 &&
+      step === 'otp' &&
+      autoSubmittedOtp.current !== otp   // haven't fired for this exact value yet
+    ) {
+      autoSubmittedOtp.current = otp
+      const timer = setTimeout(() => {
+        handleVerifyOtp({ preventDefault: () => {} } as React.FormEvent)
+      }, 600)
+      return () => clearTimeout(timer)
+    }
+  }, [otp, step])
 
   // ── Step 1: Send OTP ───────────────────────────────────────────────
   async function handleSendOtp(e: React.FormEvent) {
@@ -46,13 +51,18 @@ export default function AuthPage() {
     setLoading(true)
     try {
       const { data } = await api.post('/auth/send-otp', { phone })
+
+      // Reset auto-submit guard for new OTP session
+      autoSubmittedOtp.current = ''
+      setOtp('')
+      setDevOtp('')
       setStep('otp')
       startResendTimer()
 
-      // Dev mode — show OTP
+      // Auto-fill OTP from response (dev mode — no SMS provider yet)
       if (data.otp) {
-        setDevOtp(data.otp); 
-        setOtp(data.otp);
+        setDevOtp(data.otp)
+        setOtp(data.otp)
       }
 
     } catch (err: any) {
@@ -77,14 +87,13 @@ export default function AuthPage() {
       const { data } = await api.post('/auth/verify-otp', {
         phone,
         code: otp,
-        name: name || undefined,
+        name: name.trim() || undefined,
       })
 
-      // Store token
       localStorage.setItem('auth_token', data.token)
       useAuthStore.setState({
-        user: data.user,
-        token: data.token,
+        user:       data.user,
+        token:      data.token,
         isLoggedIn: true,
       })
 
@@ -93,8 +102,9 @@ export default function AuthPage() {
     } catch (err: any) {
       const response = err?.response?.data
 
-      // New user needs to provide name
       if (response?.requires === 'name') {
+        // New user — ask for name. OTP is still valid (not yet consumed).
+        // The auto-submit guard stops the useEffect re-firing here.
         setStep('name')
         setError('')
         return
@@ -106,7 +116,7 @@ export default function AuthPage() {
     }
   }
 
-  // ── Step 3: Submit name then verify again ──────────────────────────
+  // ── Step 3: Name provided → verify again with name ─────────────────
   async function handleSubmitName(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -116,11 +126,11 @@ export default function AuthPage() {
       return
     }
 
-    // Re-use verify with name included
+    // Call verifyOtp directly — it will include name in the payload
     await handleVerifyOtp(e)
   }
 
-  // ── Resend timer ───────────────────────────────────────────────────
+  // ── Resend ─────────────────────────────────────────────────────────
   function startResendTimer() {
     setResendIn(30)
     const interval = setInterval(() => {
@@ -133,19 +143,20 @@ export default function AuthPage() {
 
   async function handleResend() {
     setOtp('')
-    setError('')
     setDevOtp('')
-    await handleSendOtp({ preventDefault: () => {} } as any)
+    setError('')
+    autoSubmittedOtp.current = ''
+    await handleSendOtp({ preventDefault: () => {} } as React.FormEvent)
   }
 
-  // ── Shared styles ──────────────────────────────────────────────────
+  // ── Shared input style ─────────────────────────────────────────────
   const input = `
     w-full px-4 py-3.5 rounded-2xl text-sm font-medium
     bg-gray-100 dark:bg-white/5
     border border-transparent
     focus:border-brand focus:bg-white dark:focus:bg-white/10
     focus:outline-none focus:ring-0
-    transition-all placeholder:text-gray-400
+    transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500
     dark:text-white
   `
 
@@ -153,7 +164,7 @@ export default function AuthPage() {
     <div className="min-h-screen flex flex-col justify-center px-6 py-12
                     bg-gray-50 dark:bg-gray-950">
 
-      {/* ── Logo ─────────────────────────────────────────────────── */}
+      {/* Logo */}
       <div className="text-center mb-10">
         <div className="inline-flex items-center justify-center
                         w-16 h-16 rounded-2xl bg-brand/10 mb-4">
@@ -167,7 +178,7 @@ export default function AuthPage() {
         </p>
       </div>
 
-      {/* ── Step indicators ──────────────────────────────────────── */}
+      {/* Step indicators */}
       <div className="flex items-center justify-center gap-2 mb-8">
         {(['phone', 'otp', 'name'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
@@ -183,7 +194,7 @@ export default function AuthPage() {
         ))}
       </div>
 
-      {/* ── Step 1: Phone ────────────────────────────────────────── */}
+      {/* ── Step 1: Phone ────────────────────────────────────────────── */}
       {step === 'phone' && (
         <form onSubmit={handleSendOtp} className="space-y-4">
           <div>
@@ -195,8 +206,8 @@ export default function AuthPage() {
               <div className="absolute left-4 top-1/2 -translate-y-1/2
                               flex items-center gap-2 pointer-events-none">
                 <Phone className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-500 font-medium border-r
-                                 border-gray-200 dark:border-white/10 pr-2">
+                <span className="text-sm text-gray-500 dark:text-gray-400 font-medium
+                                 border-r border-gray-200 dark:border-white/10 pr-2">
                   +91
                 </span>
               </div>
@@ -205,7 +216,7 @@ export default function AuthPage() {
                 inputMode="numeric"
                 placeholder="98765 43210"
                 value={phone}
-                onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
+                onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 maxLength={10}
                 className={input + ' pl-24'}
                 autoFocus
@@ -218,11 +229,14 @@ export default function AuthPage() {
 
           {error && <ErrorBox message={error} />}
 
-          <button type="submit" disabled={loading}
+          <button
+            type="submit"
+            disabled={loading || phone.length < 10}
             className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
                        bg-brand hover:bg-brand-dark active:scale-[0.98]
                        transition-all disabled:opacity-60
-                       flex items-center justify-center gap-2">
+                       flex items-center justify-center gap-2"
+          >
             {loading
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <ArrowRight className="w-4 h-4" />
@@ -232,7 +246,7 @@ export default function AuthPage() {
         </form>
       )}
 
-      {/* ── Step 2: OTP ──────────────────────────────────────────── */}
+      {/* ── Step 2: OTP ──────────────────────────────────────────────── */}
       {step === 'otp' && (
         <form onSubmit={handleVerifyOtp} className="space-y-4">
           <div>
@@ -241,8 +255,11 @@ export default function AuthPage() {
                                 dark:text-gray-400 uppercase tracking-wide">
                 Enter OTP
               </label>
-              <button type="button" onClick={() => setStep('phone')}
-                className="text-xs text-brand font-medium">
+              <button
+                type="button"
+                onClick={() => { setStep('phone'); setOtp(''); setError('') }}
+                className="text-xs text-brand font-medium"
+              >
                 Change number
               </button>
             </div>
@@ -253,21 +270,21 @@ export default function AuthPage() {
 
             {/* Dev OTP hint */}
             {devOtp && (
-  <div className="bg-amber-50 dark:bg-amber-500/10 border
-                  border-amber-200 dark:border-amber-500/20
-                  rounded-xl px-4 py-2.5 mb-3
-                  flex items-center justify-between">
-    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-      🧪 OTP auto-filled: {devOtp}
-    </p>
-    <span className="text-[10px] text-amber-500">
-      Submitting…
-    </span>
-  </div>
-)}
+              <div className="bg-amber-50 dark:bg-amber-500/10 border
+                              border-amber-200 dark:border-amber-500/20
+                              rounded-xl px-4 py-2.5 mb-3
+                              flex items-center justify-between">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                  🧪 OTP auto-filled: {devOtp}
+                </p>
+                {loading && (
+                  <span className="text-[10px] text-amber-500 animate-pulse">
+                    Verifying…
+                  </span>
+                )}
+              </div>
+            )}
 
-
-            {/* OTP input — big digits */}
             <input
               type="text"
               inputMode="numeric"
@@ -282,34 +299,38 @@ export default function AuthPage() {
 
           {error && <ErrorBox message={error} />}
 
-          <button type="submit" disabled={loading || otp.length !== 6}
+          <button
+            type="submit"
+            disabled={loading || otp.length !== 6}
             className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
                        bg-brand hover:bg-brand-dark active:scale-[0.98]
                        transition-all disabled:opacity-60
-                       flex items-center justify-center gap-2">
+                       flex items-center justify-center gap-2"
+          >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Verifying…' : 'Verify OTP'}
           </button>
 
-          {/* Resend */}
           <div className="text-center">
             {resendIn > 0 ? (
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-400 dark:text-gray-500">
                 Resend OTP in {resendIn}s
               </p>
             ) : (
-              <button type="button" onClick={handleResend}
+              <button
+                type="button"
+                onClick={handleResend}
                 className="text-xs text-brand font-semibold
-                           flex items-center gap-1 mx-auto">
-                <RotateCcw className="w-3 h-3" />
-                Resend OTP
+                           flex items-center gap-1 mx-auto"
+              >
+                <RotateCcw className="w-3 h-3" /> Resend OTP
               </button>
             )}
           </div>
         </form>
       )}
 
-      {/* ── Step 3: Name (new users only) ────────────────────────── */}
+      {/* ── Step 3: Name (new users only) ────────────────────────────── */}
       {step === 'name' && (
         <form onSubmit={handleSubmitName} className="space-y-4">
           <div>
@@ -317,7 +338,7 @@ export default function AuthPage() {
                               dark:text-gray-400 mb-2 uppercase tracking-wide">
               What's your name?
             </label>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Looks like you're new here! What should we call you?
             </p>
             <div className="relative">
@@ -336,13 +357,26 @@ export default function AuthPage() {
 
           {error && <ErrorBox message={error} />}
 
-          <button type="submit" disabled={loading || !name.trim()}
+          <button
+            type="submit"
+            disabled={loading || !name.trim()}
             className="w-full py-3.5 rounded-2xl font-bold text-sm text-white
                        bg-brand hover:bg-brand-dark active:scale-[0.98]
                        transition-all disabled:opacity-60
-                       flex items-center justify-center gap-2">
+                       flex items-center justify-center gap-2"
+          >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Creating account…' : 'Get started →'}
+          </button>
+
+          {/* Back option if user wants to change phone */}
+          <button
+            type="button"
+            onClick={() => { setStep('phone'); setOtp(''); setName(''); setError('') }}
+            className="w-full text-center text-xs text-gray-400 dark:text-gray-500
+                       hover:text-gray-600 dark:hover:text-gray-300 transition"
+          >
+            ← Use a different number
           </button>
         </form>
       )}

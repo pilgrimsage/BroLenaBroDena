@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/api/axios'
 import { enqueue } from '@/lib/offlineQueue'
 
-// ── Balance / Dashboard ────────────────────────────────────────────
+// ── Balances / Dashboard ───────────────────────────────────────────
 
 export function useBalances() {
   return useQuery({
@@ -27,16 +27,17 @@ export function usePendingRequests() {
   })
 }
 
+// Accepts phone (primary) or email (fallback)
 export function useSendFriendRequest() {
   const qc = useQueryClient()
 
   return useMutation({
-    mutationFn: async (email: string) => {
+    mutationFn: async (payload: { phone?: string; email?: string }) => {
       if (!navigator.onLine) {
-        await enqueue('send_friend_request', '/friends/send', 'POST', { email })
+        await enqueue('send_friend_request', '/friends/send', 'POST', payload)
         throw { isOfflineQueued: true }
       }
-      return api.post('/friends/send', { email }).then(r => r.data)
+      return api.post('/friends/send', payload).then(r => r.data)
     },
 
     onError: (error: any) => {
@@ -72,6 +73,15 @@ export function useRemoveFriend() {
   })
 }
 
+// ── Guest contacts ─────────────────────────────────────────────────
+
+export function useGuests() {
+  return useQuery({
+    queryKey: ['guests'],
+    queryFn:  () => api.get('/guests').then(r => r.data),
+  })
+}
+
 // ── Transactions ───────────────────────────────────────────────────
 
 export function useLedger(friendId: number) {
@@ -79,7 +89,14 @@ export function useLedger(friendId: number) {
     queryKey: ['ledger', friendId],
     queryFn:  () => api.get(`/transactions/with/${friendId}`).then(r => r.data),
     enabled:  !!friendId,
-    // enabled: false = don't fetch until friendId exists
+  })
+}
+
+export function useGuestLedger(guestId: number) {
+  return useQuery({
+    queryKey: ['guest-ledger', guestId],
+    queryFn:  () => api.get(`/transactions/with-guest/${guestId}`).then(r => r.data),
+    enabled:  !!guestId,
   })
 }
 
@@ -88,32 +105,21 @@ export function useAddTransaction() {
 
   return useMutation({
     mutationFn: async (payload: any) => {
-      // Check if online before attempting
       if (!navigator.onLine) {
-        // Queue it for later
-        await enqueue(
-          'add_transaction',
-          '/transactions',
-          'POST',
-          payload
-        )
-        // Return a fake success so the UI doesn't show error
-        // We'll throw a special error type to distinguish
+        await enqueue('add_transaction', '/transactions', 'POST', payload)
         throw { isOfflineQueued: true }
       }
-
       return api.post('/transactions', payload).then(r => r.data)
     },
 
     onError: (error: any) => {
-      // Offline queued — not a real error
       if (error?.isOfflineQueued) return
-      // Real error — let it propagate
     },
 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['balances'] })
-      qc.invalidateQueries({ queryKey: ['ledger']   })
+      qc.invalidateQueries({ queryKey: ['ledger'] })
+      qc.invalidateQueries({ queryKey: ['guest-ledger'] })
     },
   })
 }
@@ -158,6 +164,5 @@ export function useNotifications() {
     queryKey: ['notifications'],
     queryFn:  () => api.get('/notifications').then(r => r.data),
     refetchInterval: 30_000,
-    // Refetch every 30 seconds automatically — keeps unread count fresh
   })
 }

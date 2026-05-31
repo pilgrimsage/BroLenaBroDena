@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   UserPlus, Check, X, ChevronRight,
-  Clock, Users, Loader2, Search
+  Clock, Users, Loader2, Search, Phone
 } from 'lucide-react'
 import {
   useFriends,
@@ -13,65 +13,61 @@ import {
 } from '@/hooks/useApi'
 import { Skeleton } from '@/components/Skeleton'
 
-// Tab type — keeps TypeScript happy
 type Tab = 'friends' | 'pending' | 'add'
 
 export default function FriendsPage() {
-  const navigate          = useNavigate()
-  const [tab, setTab]     = useState<Tab>('friends')
-  const [email, setEmail] = useState('')
-  const [sendError, setSendError]     = useState('')
+  const navigate = useNavigate()
+  const [tab,    setTab]    = useState<Tab>('friends')
+  const [phone,  setPhone]  = useState('')
+  const [sendError,   setSendError]   = useState('')
   const [sendSuccess, setSendSuccess] = useState('')
 
-  // ── Data hooks ────────────────────────────────────────────────────
-  const { data: friends = [],  isLoading: loadingFriends  } = useFriends()
-  const { data: pending = [],  isLoading: loadingPending  } = usePendingRequests()
+  const { data: friends = [], isLoading: loadingFriends } = useFriends()
+  const { data: pending = [], isLoading: loadingPending } = usePendingRequests()
   const sendRequest  = useSendFriendRequest()
   const respondReq   = useRespondFriendRequest()
   const removeFriend = useRemoveFriend()
 
-  // Pending count for badge on tab
-  const pendingCount = pending.length
+  const pendingCount = (pending as any[]).length
 
-  // ── Send friend request ───────────────────────────────────────────
+  // ── Send friend request by phone ──────────────────────────────────
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
     setSendError('')
     setSendSuccess('')
 
-    if (!email.trim()) {
-      setSendError('Enter an email address.')
+    const cleaned = phone.replace(/\D/g, '')
+    if (cleaned.length < 10) {
+      setSendError('Enter a valid 10-digit phone number.')
       return
     }
 
     try {
-      await sendRequest.mutateAsync(email.trim())
-      setSendSuccess(`Request sent to ${email}!`)
-      setEmail('')
+      await sendRequest.mutateAsync({ phone: cleaned })
+      setSendSuccess('Friend request sent!')
+      setPhone('')
     } catch (err: any) {
+      if (err?.isOfflineQueued) {
+        setSendSuccess('Request queued — will send when online.')
+        setPhone('')
+        return
+      }
       const msg = err?.response?.data?.message
-              ?? err?.response?.data?.errors?.email?.[0]
               ?? 'Failed to send request.'
       setSendError(String(msg))
     }
   }
 
-  // ── Respond to request ────────────────────────────────────────────
   async function handleRespond(id: number, action: 'accept' | 'decline') {
     try {
       await respondReq.mutateAsync({ id, action })
-      // Cache auto-updates — pending list refreshes, friends list refreshes
     } catch {
-      // Silent — UI reflects actual state after refetch
+      // silent
     }
   }
 
-  // ── Remove friend ─────────────────────────────────────────────────
   async function handleRemove(userId: number, name: string) {
-    // Simple confirmation — no need for modal yet
-    const confirmed = window.confirm(`Remove ${name} from friends?`)
-    if (!confirmed) return
-
+    if (!window.confirm(`Remove ${name} from friends?`)) return
     try {
       await removeFriend.mutateAsync(userId)
     } catch {
@@ -79,20 +75,21 @@ export default function FriendsPage() {
     }
   }
 
-  // ── Shared input style ────────────────────────────────────────────
   const input = `
-    w-full px-4 py-3 rounded-xl text-sm bg-gray-50
-    border border-gray-200 focus:outline-none
-    focus:ring-2 focus:ring-brand/40 focus:border-brand
-    transition-all placeholder:text-gray-400
+    w-full px-4 py-3 rounded-xl text-sm
+    bg-gray-50 dark:bg-white/5
+    border border-gray-200 dark:border-white/10
+    text-gray-900 dark:text-white
+    focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand
+    transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500
   `
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
 
-      {/* ── Tab bar ────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-gray-900
-               border-gray-100 dark:border-white/5 bg-white border-b border-gray-100 px-5 pt-4 pb-0 sticky top-14 z-10">
+      {/* Tab bar */}
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-100
+                      dark:border-white/5 px-5 pt-4 pb-0 sticky top-14 z-10">
         <div className="flex gap-1">
           {([
             { key: 'friends', label: 'Friends',  count: null         },
@@ -102,17 +99,14 @@ export default function FriendsPage() {
             <button
               key={key}
               onClick={() => setTab(key)}
-              className={`
-                relative flex items-center gap-1.5 px-4 py-3 text-sm font-semibold
-                border-b-2 transition-all
-                ${tab === key
-                  ? 'border-brand text-brand'
-                  : 'border-transparent text-gray-400 dark:text-gray-500'
-                }
-              `}
+              className={`relative flex items-center gap-1.5 px-4 py-3 text-sm font-semibold
+                          border-b-2 transition-all
+                          ${tab === key
+                            ? 'border-brand text-brand'
+                            : 'border-transparent text-gray-400 dark:text-gray-500'
+                          }`}
             >
               {label}
-              {/* Badge — only show if count > 0 */}
               {count !== null && count > 0 && (
                 <span className="bg-red-500 text-white text-[10px] font-bold
                                  w-4 h-4 rounded-full flex items-center justify-center">
@@ -125,33 +119,29 @@ export default function FriendsPage() {
       </div>
 
       <div className="px-5 py-4">
-
-        {/* ── Tab: Friends list ─────────────────────────────────── */}
         {tab === 'friends' && (
           <FriendsTab
-            friends={friends}
+            friends={friends as any[]}
             isLoading={loadingFriends}
-            onChat={(id) => navigate(`/ledger/${id}`)}
+            onLedger={id => navigate(`/ledger/${id}`)}
             onRemove={handleRemove}
           />
         )}
 
-        {/* ── Tab: Pending requests ─────────────────────────────── */}
         {tab === 'pending' && (
           <PendingTab
-            pending={pending}
+            pending={pending as any[]}
             isLoading={loadingPending}
-            onAccept={(id) => handleRespond(id, 'accept')}
-            onDecline={(id) => handleRespond(id, 'decline')}
+            onAccept={id => handleRespond(id, 'accept')}
+            onDecline={id => handleRespond(id, 'decline')}
             isResponding={respondReq.isPending}
           />
         )}
 
-        {/* ── Tab: Add friend ───────────────────────────────────── */}
         {tab === 'add' && (
           <AddFriendTab
-            email={email}
-            onEmailChange={setEmail}
+            phone={phone}
+            onPhoneChange={setPhone}
             onSubmit={handleSend}
             isPending={sendRequest.isPending}
             error={sendError}
@@ -159,28 +149,26 @@ export default function FriendsPage() {
             input={input}
           />
         )}
-
       </div>
     </div>
   )
 }
 
-// ── Sub-component: Friends list ──────────────────────────────────────
+// ── FriendsTab ───────────────────────────────────────────────────────
 
-interface FriendsTabProps {
+function FriendsTab({
+  friends, isLoading, onLedger, onRemove,
+}: {
   friends:   any[]
   isLoading: boolean
-  onChat:    (id: number) => void
+  onLedger:  (id: number) => void
   onRemove:  (id: number, name: string) => void
-}
-
-function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
+}) {
   const [search, setSearch] = useState('')
 
-  // Client-side filter — no API call needed for simple search
-  const filtered = friends.filter((f: any) =>
+  const filtered = friends.filter(f =>
     f.name.toLowerCase().includes(search.toLowerCase()) ||
-    f.email.toLowerCase().includes(search.toLowerCase())
+    (f.phone ?? '').includes(search)
   )
 
   if (isLoading) return (
@@ -191,9 +179,9 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
 
   if (friends.length === 0) return (
     <div className="text-center py-16">
-      <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-      <p className="text-gray-400 text-sm font-medium">No friends yet</p>
-      <p className="text-gray-300 text-xs mt-1">
+      <Users className="w-10 h-10 text-gray-200 dark:text-white/10 mx-auto mb-3" />
+      <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">No friends yet</p>
+      <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
         Go to Add tab to send a request
       </p>
     </div>
@@ -201,62 +189,63 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
 
   return (
     <div className="space-y-3">
-
-      {/* Search box — client side */}
+      {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search friends…"
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-white
-                     border border-gray-200 focus:outline-none
-                     focus:ring-2 focus:ring-brand/40 transition-all bg-white dark:bg-gray-900
-           border-gray-200 dark:border-white/10
-           text-gray-900 dark:text-white"
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm
+                     bg-white dark:bg-gray-900
+                     border border-gray-200 dark:border-white/10
+                     text-gray-900 dark:text-white
+                     focus:outline-none focus:ring-2 focus:ring-brand/40 transition-all"
         />
       </div>
 
-      {/* Friend cards */}
-      {filtered.map((friend: any) => (
-        <div
-          key={friend.id}
-          className="bg-white dark:bg-gray-900
-               border-gray-100 dark:border-white/5 flex items-center gap-3 bg-white rounded-2xl p-4
-                     border border-gray-100 shadow-sm"
+      {/* Cards */}
+      {filtered.map(friend => (
+        <div key={friend.id}
+          className="flex items-center gap-3 bg-white dark:bg-gray-900 rounded-2xl p-4
+                     border border-gray-100 dark:border-white/5 shadow-sm"
         >
           {/* Avatar */}
-          <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center
-                          justify-center font-bold text-brand text-sm flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-brand/10 dark:bg-brand/20
+                          flex items-center justify-center
+                          font-bold text-brand text-sm flex-shrink-0">
             {friend.name.charAt(0).toUpperCase()}
           </div>
 
           {/* Info */}
-          <div className="bg-blue-50 dark:bg-blue-500/10
-               border-blue-100 dark:border-blue-500/20">
-            <p className="text-blue-700 dark:text-blue-400 font-semibold text-sm text-gray-900 truncate text-gray-900 dark:text-white">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">
               {friend.name}
             </p>
-            <p className="text-blue-600 dark:text-blue-300 text-xs text-gray-400 truncate">{friend.email}</p>
+            {/* Show phone if available, else email */}
+            {(friend.phone || friend.email) && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                {friend.phone || friend.email}
+              </p>
+            )}
           </div>
 
           {/* Actions */}
           <div className="flex gap-2 flex-shrink-0">
-            {/* View ledger */}
             <button
-              onClick={() => onChat(friend.id)}
+              onClick={() => onLedger(friend.id)}
               className="flex items-center gap-1 text-xs font-semibold
-                         text-brand bg-brand/10 px-3 py-1.5 rounded-lg
+                         text-brand bg-brand/10 dark:bg-brand/20
+                         px-3 py-1.5 rounded-lg
                          hover:bg-brand/20 active:scale-95 transition-all"
             >
               Ledger <ChevronRight className="w-3 h-3" />
             </button>
-
-            {/* Remove */}
             <button
               onClick={() => onRemove(friend.id, friend.name)}
-              className="text-gray-300 hover:text-red-400 transition p-1.5 rounded-lg
-                         hover:bg-red-50 active:scale-95"
+              className="text-gray-300 dark:text-gray-600 hover:text-red-400
+                         transition p-1.5 rounded-lg hover:bg-red-50
+                         dark:hover:bg-red-500/10 active:scale-95"
               title="Remove friend"
             >
               <X className="w-4 h-4" />
@@ -265,29 +254,26 @@ function FriendsTab({ friends, isLoading, onChat, onRemove }: FriendsTabProps) {
         </div>
       ))}
 
-      {/* No search results */}
       {filtered.length === 0 && search && (
-        <p className="text-center text-gray-400 text-sm py-8">
-          No friends named "{search}"
+        <p className="text-center text-gray-400 dark:text-gray-500 text-sm py-8">
+          No friends matching "{search}"
         </p>
       )}
-
     </div>
   )
 }
 
-// ── Sub-component: Pending requests ──────────────────────────────────
+// ── PendingTab ───────────────────────────────────────────────────────
 
-interface PendingTabProps {
+function PendingTab({
+  pending, isLoading, onAccept, onDecline, isResponding,
+}: {
   pending:      any[]
   isLoading:    boolean
   onAccept:     (id: number) => void
   onDecline:    (id: number) => void
   isResponding: boolean
-}
-
-function PendingTab({ pending, isLoading, onAccept, onDecline, isResponding }: PendingTabProps) {
-
+}) {
   if (isLoading) return (
     <div className="space-y-3">
       {[1,2].map(i => <Skeleton key={i} className="h-20" />)}
@@ -296,63 +282,56 @@ function PendingTab({ pending, isLoading, onAccept, onDecline, isResponding }: P
 
   if (pending.length === 0) return (
     <div className="text-center py-16">
-      <Clock className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-      <p className="text-gray-400 text-sm font-medium">No pending requests</p>
-      <p className="text-gray-300 text-xs mt-1">
-        You're all caught up
-      </p>
+      <Clock className="w-10 h-10 text-gray-200 dark:text-white/10 mx-auto mb-3" />
+      <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">No pending requests</p>
+      <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">You're all caught up</p>
     </div>
   )
 
   return (
     <div className="space-y-3">
-      {pending.map((req: any) => (
-        <div
-          key={req.id}
-          className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"
+      {pending.map(req => (
+        <div key={req.id}
+          className="bg-white dark:bg-gray-900 rounded-2xl p-4
+                     border border-gray-100 dark:border-white/5 shadow-sm"
         >
           <div className="flex items-center gap-3">
-
-            {/* Avatar */}
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center
-                            justify-center font-bold text-amber-600 text-sm flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-500/10
+                            flex items-center justify-center
+                            font-bold text-amber-600 dark:text-amber-400 text-sm flex-shrink-0">
               {req.requester.name.charAt(0).toUpperCase()}
             </div>
-
-            {/* Info */}
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm text-gray-900">
+              <p className="font-semibold text-sm text-gray-900 dark:text-white">
                 {req.requester.name}
               </p>
-              <p className="text-xs text-gray-400 truncate">
-                {req.requester.email}
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
+                {req.requester.phone || req.requester.email || ''}
               </p>
             </div>
           </div>
 
-          {/* Action buttons */}
           <div className="flex gap-2 mt-3">
             <button
               onClick={() => onAccept(req.id)}
               disabled={isResponding}
               className="flex-1 flex items-center justify-center gap-1.5
                          text-sm font-semibold text-white bg-brand
-                         py-2.5 rounded-xl hover:bg-brand/90
+                         py-2.5 rounded-xl hover:bg-brand-dark
                          active:scale-[0.98] transition-all disabled:opacity-50"
             >
-              <Check className="w-4 h-4" />
-              Accept
+              <Check className="w-4 h-4" /> Accept
             </button>
             <button
               onClick={() => onDecline(req.id)}
               disabled={isResponding}
               className="flex-1 flex items-center justify-center gap-1.5
-                         text-sm font-semibold text-gray-500 bg-gray-100
-                         py-2.5 rounded-xl hover:bg-gray-200
+                         text-sm font-semibold text-gray-500 dark:text-gray-400
+                         bg-gray-100 dark:bg-white/5
+                         py-2.5 rounded-xl hover:bg-gray-200 dark:hover:bg-white/10
                          active:scale-[0.98] transition-all disabled:opacity-50"
             >
-              <X className="w-4 h-4" />
-              Decline
+              <X className="w-4 h-4" /> Decline
             </button>
           </div>
         </div>
@@ -361,65 +340,81 @@ function PendingTab({ pending, isLoading, onAccept, onDecline, isResponding }: P
   )
 }
 
-// ── Sub-component: Add friend ─────────────────────────────────────────
+// ── AddFriendTab ─────────────────────────────────────────────────────
 
-interface AddFriendTabProps {
-  email:         string
-  onEmailChange: (v: string) => void
+function AddFriendTab({
+  phone, onPhoneChange, onSubmit,
+  isPending, error, success, input,
+}: {
+  phone:         string
+  onPhoneChange: (v: string) => void
   onSubmit:      (e: React.FormEvent) => void
   isPending:     boolean
   error:         string
   success:       string
   input:         string
-}
-
-function AddFriendTab({
-  email, onEmailChange, onSubmit,
-  isPending, error, success, input,
-}: AddFriendTabProps) {
+}) {
   return (
     <div>
-      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-
+      <div className="bg-white dark:bg-gray-900 rounded-2xl p-5
+                      border border-gray-100 dark:border-white/5 shadow-sm">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-full bg-brand/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-brand/10 dark:bg-brand/20
+                          flex items-center justify-center">
             <UserPlus className="w-5 h-5 text-brand" />
           </div>
           <div>
-            <p className="font-bold text-sm text-gray-900">Send a request</p>
-            <p className="text-xs text-gray-400">Enter their FriendLedger email</p>
+            <p className="font-bold text-sm text-gray-900 dark:text-white">
+              Send a friend request
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Enter their phone number
+            </p>
           </div>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="friend@example.com"
-            value={email}
-            onChange={e => onEmailChange(e.target.value)}
-            className={input}
-            autoFocus
-          />
+          {/* Phone input with +91 prefix */}
+          <div className="relative">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2
+                            flex items-center gap-2 pointer-events-none">
+              <Phone className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-500 dark:text-gray-400 font-medium
+                               border-r border-gray-200 dark:border-white/10 pr-2">
+                +91
+              </span>
+            </div>
+            <input
+              type="tel"
+              inputMode="numeric"
+              placeholder="98765 43210"
+              value={phone}
+              onChange={e => onPhoneChange(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              className={input + ' pl-24'}
+              maxLength={10}
+              autoFocus
+            />
+          </div>
 
-          {/* Error */}
           {error && (
-            <p className="text-xs text-rose-500 bg-rose-50 rounded-xl px-4 py-2.5">
+            <p className="text-xs text-rose-500 dark:text-rose-400
+                          bg-rose-50 dark:bg-rose-500/10 rounded-xl px-4 py-2.5">
               {error}
             </p>
           )}
 
-          {/* Success */}
           {success && (
-            <p className="text-xs text-emerald-600 bg-emerald-50 rounded-xl px-4 py-2.5">
+            <p className="text-xs text-emerald-600 dark:text-emerald-400
+                          bg-emerald-50 dark:bg-emerald-500/10 rounded-xl px-4 py-2.5">
               {success}
             </p>
           )}
 
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || phone.length < 10}
             className="w-full py-3 rounded-xl font-bold text-sm text-white
-                       bg-brand hover:bg-brand/90 active:scale-[0.98]
+                       bg-brand hover:bg-brand-dark active:scale-[0.98]
                        transition-all disabled:opacity-60
                        flex items-center justify-center gap-2"
           >
@@ -432,15 +427,15 @@ function AddFriendTab({
         </form>
       </div>
 
-      {/* Info card */}
-      <div className="mt-4 bg-blue-50 rounded-2xl p-4 border border-blue-100">
-        <p className="text-xs font-semibold text-blue-700 mb-1">
-          Friend not on FriendLedger?
+      <div className="mt-4 bg-blue-50 dark:bg-blue-500/10 rounded-2xl p-4
+                      border border-blue-100 dark:border-blue-500/20">
+        <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">
+          Friend not on BrolenaBrodena yet?
         </p>
-        <p className="text-xs text-blue-600 leading-relaxed">
-          You can still add transactions with them.
-          From the Dashboard, tap + and choose "Not on app yet".
-          When they join, everything links automatically.
+        <p className="text-xs text-blue-600 dark:text-blue-300 leading-relaxed">
+          You can still track transactions with them.
+          From the Dashboard tap + → Guest tab.
+          When they join with the same number, everything links automatically.
         </p>
       </div>
     </div>

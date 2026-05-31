@@ -6,35 +6,26 @@ import { FriendCardSkeleton } from '@/components/Skeleton'
 import AddTransaction from '@/components/AddTransaction'
 
 export default function DashboardPage() {
-  const navigate = useNavigate()
+  const navigate       = useNavigate()
   const [showAdd, setShowAdd] = useState(false)
 
-  // One line — data, loading state, error all handled
   const { data, isLoading, error } = useBalances()
-  // data = { net, total_owed_to_me, total_i_owe, friends: [...] }
-  // isLoading = true while fetching
-  // error = Error object if request failed
 
-  const net     = data?.net           ?? 0
+  const net     = data?.net              ?? 0
   const owedMe  = data?.total_owed_to_me ?? 0
   const iOwe    = data?.total_i_owe      ?? 0
   const friends = data?.friends          ?? []
-  // ?? 0 — if data is undefined (loading), default to 0
 
   return (
-    <div className="px-5 pt-4 pb-6 space-y-5 bg-gray-50 dark:bg-gray-950">
+    <div className="px-5 pt-4 pb-6 space-y-5">
 
-      {/* ── Net balance card ─────────────────────────────────────── */}
-      <div className={`
-        rounded-2xl p-6 text-white relative overflow-hidden
-        ${net < 0 ? 'bg-rose-500' : 'bg-brand'}
-      `}>
-        {/* Decorative circles */}
+      {/* Net balance card */}
+      <div className={`rounded-2xl p-6 text-white relative overflow-hidden
+                       ${net < 0 ? 'bg-rose-500' : 'bg-brand'}`}>
         <div className="absolute -right-4 -top-4 w-28 h-28 rounded-full bg-white/10" />
         <div className="absolute -right-2 bottom-[-2rem] w-20 h-20 rounded-full bg-white/10" />
 
         {isLoading ? (
-          // Show skeleton while loading
           <div className="space-y-3">
             <div className="h-4 w-32 bg-white/20 rounded animate-pulse" />
             <div className="h-10 w-48 bg-white/20 rounded animate-pulse" />
@@ -50,7 +41,6 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Sub-stats row */}
         <div className="flex gap-3 mt-5 relative z-10">
           {[
             { label: 'Owed to me', value: owedMe, Icon: TrendingUp  },
@@ -68,7 +58,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Friends / balances list ──────────────────────────────── */}
+      {/* Friends balances */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-gray-900 dark:text-white">Balances</h2>
@@ -80,14 +70,12 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Error state */}
         {error && (
-          <div className="text-center py-8 text-red-500 text-sm">
-            Failed to load. Pull to refresh.
+          <div className="text-center py-8 text-rose-500 text-sm">
+            Failed to load. Check your connection.
           </div>
         )}
 
-        {/* Loading state — show 3 skeletons */}
         {isLoading && (
           <div className="space-y-2">
             <FriendCardSkeleton />
@@ -96,11 +84,10 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Empty state */}
-        {!isLoading && friends.length === 0 && (
+        {!isLoading && !error && (friends as any[]).length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-400 text-sm">No friends yet.</p>
-            <p className="text-gray-400 text-xs mt-1">
+            <p className="text-gray-400 dark:text-gray-500 text-sm">No friends yet.</p>
+            <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">
               Add friends to start tracking balances.
             </p>
             <button
@@ -112,10 +99,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Data — friend balance cards */}
-        {!isLoading && friends.length > 0 && (
+        {!isLoading && (friends as any[]).length > 0 && (
           <div className="space-y-2">
-            {friends.map((item: any) => (
+            {(friends as any[]).map((item) => (
               <FriendBalanceCard
                 key={item.friend.id}
                 item={item}
@@ -126,33 +112,27 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── FAB — floating add button ─────────────────────────────── */}
+      {/* FAB */}
       <button
         onClick={() => setShowAdd(true)}
         className="fixed bottom-24 right-5 w-14 h-14 rounded-full
                    bg-brand text-white shadow-lg
                    flex items-center justify-center
-                   hover:bg-brand/90 active:scale-95 transition-all z-30"
+                   hover:bg-brand-dark active:scale-95 transition-all z-30"
       >
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* Add transaction bottom sheet */}
-      {showAdd && (
-        <AddTransaction onClose={() => setShowAdd(false)} />
-      )}
-
+      {showAdd && <AddTransaction onClose={() => setShowAdd(false)} />}
     </div>
   )
 }
 
-// ── Extracted sub-component ──────────────────────────────────────────
-// When a piece of JSX gets complex, extract it into its own component
-// Props defined inline with TypeScript interface
+// ── FriendBalanceCard ────────────────────────────────────────────────
 
 interface FriendBalanceCardProps {
   item: {
-    friend:  { id: number; name: string; email: string }
+    friend:  { id: number; name: string; phone?: string }
     balance: number
     summary: string
   }
@@ -161,58 +141,50 @@ interface FriendBalanceCardProps {
 
 function FriendBalanceCard({ item, onClick }: FriendBalanceCardProps) {
   const { friend, balance, summary } = item
-
-  // First letter of name for avatar
-  const initial = friend.name.charAt(0).toUpperCase()
-
-  const isPositive = balance > 0  // they owe me
-  const isNegative = balance < 0  // I owe them
+  const initial    = friend.name.charAt(0).toUpperCase()
+  const isPositive = balance > 0
+  const isNegative = balance < 0
   const isZero     = balance === 0
 
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 bg-white rounded-2xl p-4
-                 border border-gray-100 shadow-sm
-                 hover:shadow-md active:scale-[0.99]
-                 transition-all text-left bg-white dark:bg-gray-900
-                   border-gray-100 dark:border-white/5"
+      className="w-full flex items-center gap-3 bg-white dark:bg-gray-900
+                 rounded-2xl p-4 border border-gray-100 dark:border-white/5
+                 shadow-sm hover:shadow-md active:scale-[0.99]
+                 transition-all text-left"
     >
-      {/* Avatar circle — colour shows balance direction */}
-      <div className={`
-        w-10 h-10 rounded-full flex items-center justify-center
-        text-sm font-bold text-white flex-shrink-0
-        ${isPositive ? 'bg-emerald-400'
-        : isNegative ? 'bg-rose-400'
-        : 'bg-gray-300'}
-      `}>
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center
+                       text-sm font-bold text-white flex-shrink-0
+                       ${isPositive ? 'bg-emerald-400'
+                       : isNegative ? 'bg-rose-400'
+                       : 'bg-gray-300 dark:bg-gray-600'}`}
+      >
         {initial}
       </div>
 
-      {/* Name + summary */}
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-gray-900 truncate text-gray-900 dark:text-white">
+        <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">
           {friend.name}
         </p>
         <p className={`text-xs mt-0.5 truncate
-          ${isPositive ? 'text-emerald-600'
+          ${isPositive ? 'text-emerald-600 dark:text-emerald-400'
           : isNegative ? 'text-rose-500'
-          : 'text-gray-400'}
-        `}>
+          : 'text-gray-400 dark:text-gray-500'}`}
+        >
           {summary}
         </p>
       </div>
 
-      {/* Balance amount */}
       <div className="flex items-center gap-1 flex-shrink-0">
         <span className={`font-bold text-sm
-          ${isPositive ? 'text-emerald-600'
+          ${isPositive ? 'text-emerald-600 dark:text-emerald-400'
           : isNegative ? 'text-rose-500'
-          : 'text-gray-400'}
-        `}>
+          : 'text-gray-400 dark:text-gray-500'}`}
+        >
           {isZero ? 'Settled' : `₹${Math.abs(balance).toLocaleString('en-IN')}`}
         </span>
-        <ChevronRight className="w-4 h-4 text-gray-300" />
+        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600" />
       </div>
     </button>
   )

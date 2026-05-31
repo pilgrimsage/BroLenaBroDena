@@ -1,16 +1,19 @@
 import { useState } from 'react'
-import { X, Loader2, ChevronDown } from 'lucide-react'
+import { X, Loader2, ChevronDown, Users, Ghost, UserPlus } from 'lucide-react'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
-import { useFriends, useAddTransaction } from '@/hooks/useApi'
+import { useFriends, useGuests, useAddTransaction } from '@/hooks/useApi'
 import { useSync } from '@/hooks/useSync'
 
 dayjs.extend(relativeTime)
 
+// Three modes for "who is this transaction with"
+type WithMode = 'friend' | 'existing_guest' | 'new_guest'
+
 interface Props {
   onClose:    () => void
   friendId?:  number  // pre-select a registered friend
-  guestId?:   number  // pre-select a guest contact
+  guestId?:   number  // pre-select an existing guest contact
 }
 
 export default function AddTransaction({
@@ -19,13 +22,23 @@ export default function AddTransaction({
   guestId:  preselectedGuestId,
 }: Props) {
   const { data: friends = [] } = useFriends()
+  const { data: guests  = [] } = useGuests()
   const addTx                  = useAddTransaction()
   const { isOnline }           = useSync()
 
+  // Determine initial mode from props
+  const initialMode: WithMode = preselectedGuestId
+    ? 'existing_guest'
+    : 'friend'
+
   // Form state
   const [type,       setType]       = useState<'i_paid' | 'they_paid'>('i_paid')
-  const [selectedId, setSelectedId] = useState<string>(
+  const [withMode,   setWithMode]   = useState<WithMode>(initialMode)
+  const [friendId,   setFriendId]   = useState<string>(
     preselectedFriendId ? String(preselectedFriendId) : ''
+  )
+  const [guestId,    setGuestId]    = useState<string>(
+    preselectedGuestId ? String(preselectedGuestId) : ''
   )
   const [amount,     setAmount]     = useState('')
   const [note,       setNote]       = useState('')
@@ -34,29 +47,40 @@ export default function AddTransaction({
   )
   const [error,      setError]      = useState('')
 
-  // Guest mode
-  const [useGuest,   setUseGuest]   = useState(!!preselectedGuestId)
+  // New guest fields
   const [guestName,  setGuestName]  = useState('')
   const [guestPhone, setGuestPhone] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
 
   const today = new Date().toISOString().split('T')[0]
 
+  function handleModeChange(mode: WithMode) {
+    setWithMode(mode)
+    setError('')
+    // Reset selections when switching mode
+    if (mode !== 'friend')         setFriendId('')
+    if (mode !== 'existing_guest') setGuestId('')
+    if (mode !== 'new_guest') {
+      setGuestName(''); setGuestPhone(''); setGuestEmail('')
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
 
-    if (!useGuest && !selectedId) {
-      setError('Select a friend.')
-      return
+    // Validate "with" selection
+    if (withMode === 'friend' && !friendId) {
+      setError('Select a friend.'); return
     }
-    if (useGuest && !guestName.trim()) {
-      setError('Enter their name.')
-      return
+    if (withMode === 'existing_guest' && !guestId) {
+      setError('Select a guest contact.'); return
+    }
+    if (withMode === 'new_guest' && !guestName.trim()) {
+      setError('Enter their name.'); return
     }
     if (!amount || Number(amount) <= 0) {
-      setError('Enter a valid amount.')
-      return
+      setError('Enter a valid amount.'); return
     }
 
     const payload: any = {
@@ -66,22 +90,21 @@ export default function AddTransaction({
       transaction_date: date,
     }
 
-    if (useGuest) {
+    if (withMode === 'friend') {
+      payload.user_id = parseInt(friendId)
+    } else if (withMode === 'existing_guest') {
+      payload.guest_id = parseInt(guestId)
+    } else {
       payload.guest_name  = guestName.trim()
       payload.guest_phone = guestPhone.trim() || undefined
       payload.guest_email = guestEmail.trim() || undefined
-    } else {
-      payload.user_id = parseInt(selectedId)
     }
 
     try {
       await addTx.mutateAsync(payload)
       onClose()
     } catch (err: any) {
-      if (err?.isOfflineQueued) {
-        onClose()
-        return
-      }
+      if (err?.isOfflineQueued) { onClose(); return }
       const msg =
         err?.response?.data?.message ??
         (Object.values(err?.response?.data?.errors ?? {}) as string[][])?.[0]?.[0] ??
@@ -90,7 +113,6 @@ export default function AddTransaction({
     }
   }
 
-  // Shared input class
   const input = `
     w-full px-4 py-3 rounded-xl text-sm
     bg-gray-50 dark:bg-white/5
@@ -100,14 +122,14 @@ export default function AddTransaction({
     transition-all placeholder:text-gray-400 dark:placeholder:text-gray-500
   `
 
+  // Unresolved guests only (resolved ones are now real users)
+  const unresolvedGuests = (guests as any[]).filter(g => !g.is_resolved)
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
 
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       {/* Sheet */}
       <div className="relative w-full max-w-md bg-white dark:bg-gray-900
@@ -132,61 +154,115 @@ export default function AddTransaction({
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
-          {/* Type toggle */}
+          {/* I paid / They paid */}
           <div className="flex bg-gray-100 dark:bg-white/5 rounded-xl p-1">
-            {(['i_paid', 'they_paid'] as const).map((t) => (
+            {(['i_paid', 'they_paid'] as const).map(t => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setType(t)}
-                className={`
-                  flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all
+                className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all
                   ${type === t
                     ? `bg-white dark:bg-gray-800 shadow
                        ${t === 'i_paid' ? 'text-brand' : 'text-rose-500'}`
                     : 'text-gray-400 dark:text-gray-500'
-                  }
-                `}
+                  }`}
               >
                 {t === 'i_paid' ? '💳 I paid' : '🤝 They paid'}
               </button>
             ))}
           </div>
 
-          {/* With — friend or guest */}
+          {/* With — mode tabs */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                With
-              </label>
-              <button
-                type="button"
-                onClick={() => { setUseGuest(g => !g); setError('') }}
-                className="text-[11px] text-brand font-medium"
-              >
-                {useGuest ? '← Choose from friends' : 'Not on app yet?'}
-              </button>
-            </div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+              With
+            </label>
 
-            {!useGuest ? (
+            {/* Mode selector — only show tabs if no pre-selected ID */}
+            {!preselectedFriendId && !preselectedGuestId && (
+              <div className="flex gap-1.5 mb-3">
+                {([
+                  { mode: 'friend'         as WithMode, icon: Users,    label: 'Friend'  },
+                  { mode: 'existing_guest' as WithMode, icon: Ghost,    label: 'Guest'   },
+                  { mode: 'new_guest'      as WithMode, icon: UserPlus, label: 'New'     },
+                ]).map(({ mode, icon: Icon, label }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => handleModeChange(mode)}
+                    className={`flex-1 flex items-center justify-center gap-1.5
+                                py-2 rounded-xl text-xs font-semibold
+                                transition-all border
+                      ${withMode === mode
+                        ? 'bg-brand/10 dark:bg-brand/20 text-brand border-brand/30'
+                        : 'bg-gray-50 dark:bg-white/5 text-gray-400 border-gray-200 dark:border-white/10'
+                      }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Friend dropdown */}
+            {withMode === 'friend' && (
               <div className="relative">
                 <select
-                  value={selectedId}
-                  onChange={e => setSelectedId(e.target.value)}
+                  value={friendId}
+                  onChange={e => setFriendId(e.target.value)}
                   disabled={!!preselectedFriendId}
                   className={input + ' appearance-none pr-10 cursor-pointer'}
                 >
                   <option value="">Select a friend…</option>
-                  {(friends as any[]).map((f) => (
+                  {(friends as any[]).map(f => (
                     <option key={f.id} value={f.id}>
-                      {f.name} — {f.phone || f.email || ''}
+                      {f.name} {f.phone ? `· ${f.phone}` : ''}
                     </option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2
                                         w-4 h-4 text-gray-400 pointer-events-none" />
               </div>
-            ) : (
+            )}
+
+            {/* Existing guest dropdown */}
+            {withMode === 'existing_guest' && (
+              unresolvedGuests.length === 0 ? (
+                <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-sm">
+                  No guest contacts yet.
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('new_guest')}
+                    className="block mx-auto mt-1 text-brand text-xs font-medium"
+                  >
+                    Add a new person →
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <select
+                    value={guestId}
+                    onChange={e => setGuestId(e.target.value)}
+                    disabled={!!preselectedGuestId}
+                    className={input + ' appearance-none pr-10 cursor-pointer'}
+                  >
+                    <option value="">Select a guest…</option>
+                    {unresolvedGuests.map((g: any) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} {g.phone ? `· ${g.phone}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2
+                                          w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              )
+            )}
+
+            {/* New guest fields */}
+            {withMode === 'new_guest' && (
               <div className="space-y-2">
                 <input
                   value={guestName}
@@ -199,7 +275,7 @@ export default function AddTransaction({
                   inputMode="numeric"
                   value={guestPhone}
                   onChange={e => setGuestPhone(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Phone (optional — links when they join)"
+                  placeholder="Phone (links when they join app)"
                   className={input}
                 />
                 <input
@@ -210,7 +286,7 @@ export default function AddTransaction({
                   className={input}
                 />
                 <p className="text-[11px] text-gray-400 dark:text-gray-500 px-1">
-                  Add phone or email so transactions link when they join.
+                  Add phone so transactions link automatically when they join.
                 </p>
               </div>
             )}
@@ -293,12 +369,12 @@ export default function AddTransaction({
           <button
             type="submit"
             disabled={addTx.isPending}
-            className={`
-              w-full py-3.5 rounded-xl font-bold text-sm text-white
-              flex items-center justify-center gap-2
-              active:scale-[0.98] transition-all disabled:opacity-60
-              ${type === 'i_paid' ? 'bg-brand hover:bg-brand-dark' : 'bg-rose-500 hover:bg-rose-600'}
-            `}
+            className={`w-full py-3.5 rounded-xl font-bold text-sm text-white
+                        flex items-center justify-center gap-2
+                        active:scale-[0.98] transition-all disabled:opacity-60
+                        ${type === 'i_paid'
+                          ? 'bg-brand hover:bg-brand-dark'
+                          : 'bg-rose-500 hover:bg-rose-600'}`}
           >
             {addTx.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {addTx.isPending

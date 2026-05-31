@@ -19,7 +19,8 @@ class TransactionController extends Controller
     {
         $request->validate([
             'user_id'          => 'nullable|integer|exists:users,id',
-            'guest_name'       => 'nullable|string|max:255',
+            'guest_id'         => 'nullable|integer|exists:guest_contacts,id', // existing guest
+            'guest_name'       => 'nullable|string|max:255',                   // new guest
             'guest_email'      => 'nullable|email',
             'guest_phone'      => 'nullable|string|max:20',
             'amount'           => 'required|numeric|min:0.01|max:9999999',
@@ -42,8 +43,20 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'Cannot add a transaction with yourself.'], 422);
             }
 
+        } elseif ($request->guest_id) {
+            // Existing guest contact selected from dropdown
+            $guestContact = GuestContact::where('id', $request->guest_id)
+                                        ->where('creator_id', $me->id)
+                                        ->firstOrFail();
+
+            // If the guest has since registered, treat them as a real user
+            if ($guestContact->isResolved()) {
+                $otherUser    = $guestContact->resolvedUser;
+                $guestContact = null;
+            }
+
         } elseif ($request->guest_name) {
-            // Find existing guest contact or create a new one
+            // New guest contact — find existing or create
             $guestContact = $this->findOrCreateGuest($me->id, $request);
 
             // If the guest has since registered, treat them as a real user
@@ -54,7 +67,7 @@ class TransactionController extends Controller
 
         } else {
             return response()->json([
-                'message' => 'Provide user_id or guest details (guest_name required).',
+                'message' => 'Provide user_id, guest_id, or new guest details (guest_name required).',
             ], 422);
         }
 
