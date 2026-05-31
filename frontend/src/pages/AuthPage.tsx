@@ -8,7 +8,6 @@ type Step = 'phone' | 'otp' | 'name'
 
 export default function AuthPage() {
   const navigate          = useNavigate()
-  const { fetchMe }       = useAuthStore()
 
   const [step,    setStep]    = useState<Step>('phone')
   const [phone,   setPhone]   = useState('')
