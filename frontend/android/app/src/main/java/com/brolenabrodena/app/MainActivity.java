@@ -1,4 +1,4 @@
-package com.brolenabrodena.app;
+package in.echocrew.brolenabrodena;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.brolenabrodena.app"
+    namespace = "in.echocrew.brolenabrodena"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.brolenabrodena.app"
+        applicationId "in.echocrew.brolenabrodena"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
